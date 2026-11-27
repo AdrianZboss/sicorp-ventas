@@ -38,13 +38,17 @@ final class UpdateManager {
             if(prefs.getInt("download_code",0)<=installedCode()) cleanup();
         } catch(Exception ignored){}
     }
+    private int dialogTheme(){
+        boolean light="light".equals(a.getSharedPreferences("appearance",Context.MODE_PRIVATE).getString("mode","dark"));
+        return light?android.R.style.Theme_Material_Light_Dialog_Alert:android.R.style.Theme_Material_Dialog_Alert;
+    }
     private File apk(){return new File(a.getCacheDir(),"sicorp-update.apk");}
     private File partial(){return new File(a.getCacheDir(),"sicorp-update.part.apk");}
     private void cleanup(){apk().delete();partial().delete();prefs.edit().remove("download_code").apply();}
     private void ui(Runnable r){a.runOnUiThread(()->{if(!closed&&!a.isFinishing()&&!a.isDestroyed())r.run();});}
     private int installedCode() throws Exception {return a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionCode;}
     private String installedName() throws Exception {return a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionName;}
-    private void message(String title,String body){ui(()->new AlertDialog.Builder(a).setTitle(title).setMessage(body).setPositiveButton("Aceptar",null).show());}
+    private void message(String title,String body){ui(()->new AlertDialog.Builder(a,dialogTheme()).setTitle(title).setMessage(body).setPositiveButton("Aceptar",null).show());}
     private void start(Runnable r){
         if(busy||closed)return;
         busy=true;cancelled=false;
@@ -59,7 +63,7 @@ final class UpdateManager {
     }
     void open(){
         if(busy)return;
-        new AlertDialog.Builder(a).setTitle("Actualizaciones")
+        new AlertDialog.Builder(a,dialogTheme()).setTitle("Actualizaciones")
             .setMessage("Consulta la versión más reciente. Si hay una nueva, Sicorp Ventas la descargará internamente y abrirá el instalador de Android.")
             .setPositiveButton("Buscar", (d,w)->start(this::check))
             .setNeutralButton("Cerrar sesión",(d,w)->{prefs.edit().remove("token").commit();cleanup();message("Sesión cerrada","Podrás autorizar GitHub nuevamente al buscar actualizaciones.");})
@@ -124,7 +128,7 @@ final class UpdateManager {
         long end=SystemClock.elapsedRealtime()+1000L*code.optLong("expires_in",900);
         ui(()->{
             if(progress!=null)progress.dismiss();
-            authorization=new AlertDialog.Builder(a).setTitle("Autorizar GitHub")
+            authorization=new AlertDialog.Builder(a,dialogTheme()).setTitle("Autorizar GitHub")
               .setMessage("Código: "+userCode+"\n\nAbre GitHub, pega este código y autoriza Sicorp Ventas Updater. Después vuelve a Sicorp Ventas.")
               .setPositiveButton("Copiar y abrir GitHub",null)
               .setNegativeButton("Cancelar",(d,w)->cancelled=true)
@@ -178,7 +182,7 @@ final class UpdateManager {
         }return 0;
     }
     private void showProgress(String title,String body,boolean horizontal){
-        ui(()->{if(progress!=null)progress.dismiss();progress=new ProgressDialog(a);progress.setTitle(title);progress.setMessage(body);progress.setProgressStyle(horizontal?ProgressDialog.STYLE_HORIZONTAL:ProgressDialog.STYLE_SPINNER);progress.setMax(100);progress.setCancelable(false);progress.show();});
+        ui(()->{if(progress!=null)progress.dismiss();progress=new ProgressDialog(a,dialogTheme());progress.setTitle(title);progress.setMessage(body);progress.setProgressStyle(horizontal?ProgressDialog.STYLE_HORIZONTAL:ProgressDialog.STYLE_SPINNER);progress.setMax(100);progress.setCancelable(false);progress.show();});
     }
     private void hideProgress(){ui(()->{if(progress!=null){progress.dismiss();progress=null;}});}
     private void check(){
@@ -200,7 +204,7 @@ final class UpdateManager {
             String digest=asset.optString("digest","");
             if(size<=0||size>LIMIT)throw new IOException("Tamaño de actualización no válido.");
             final String access=t.getString("access_token");
-            hideProgress();ui(()->new AlertDialog.Builder(a).setTitle("Nueva versión "+version).setMessage("Tamaño: "+String.format(java.util.Locale.US,"%.1f",size/1048576.0)+" MB\nLa descarga se guardará de forma temporal dentro de Sicorp Ventas.")
+            hideProgress();ui(()->new AlertDialog.Builder(a,dialogTheme()).setTitle("Nueva versión "+version).setMessage("Tamaño: "+String.format(java.util.Locale.US,"%.1f",size/1048576.0)+" MB\nLa descarga se guardará de forma temporal dentro de Sicorp Ventas.")
               .setPositiveButton("Descargar e instalar",(d,w)->start(()->download(id,size,digest,access,version))).setNegativeButton("Después",null).show());
         }catch(Exception e){message("No se pudo actualizar",safe(e));}finally{hideProgress();}
     }
@@ -255,7 +259,7 @@ final class UpdateManager {
         try{
             validate(apk(),null);
             if(!a.getPackageManager().canRequestPackageInstalls()){
-                new AlertDialog.Builder(a).setTitle("Permitir actualizaciones").setMessage("Android requiere que autorices a Sicorp Ventas a instalar sus propias actualizaciones. Activa el permiso y vuelve a la aplicación.")
+                new AlertDialog.Builder(a,dialogTheme()).setTitle("Permitir actualizaciones").setMessage("Android requiere que autorices a Sicorp Ventas a instalar sus propias actualizaciones. Activa el permiso y vuelve a la aplicación.")
                   .setPositiveButton("Abrir ajustes",(d,w)->{try{pendingPermission=true;a.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+a.getPackageName())));}catch(Exception e){pendingPermission=false;message("Permiso","No se pudo abrir la configuración.");}}).setNegativeButton("Después",null).show();return;
             }
             Uri uri=Uri.parse("content://"+a.getPackageName()+".updates/sicorp-update.apk");
