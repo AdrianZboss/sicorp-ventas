@@ -122,3 +122,149 @@
   const title=catalogSection.querySelector('h2');if(title)title.textContent='Registrar venta';
   renderCatalog();
 })();
+
+/* v1.4.10 — registro rápido basado en el historial local. */
+(function(){
+ 'use strict';
+ if(document.getElementById('sicorp-frequent'))return;
+ const grid=document.getElementById('grid'), search=document.getElementById('search');
+ if(!grid||!search||typeof renderCatalog!=='function')return;
+ function rankHistory(history, products, selectedBrand, selectedCategory){
+ const eligible=new Map(products.filter(p=>(selectedBrand==='TODAS'||p.brand===selectedBrand)&&(selectedCategory==='Todas'||p.cat===selectedCategory)).map(p=>[String(p.id),p]));
+ const sums=new Map();
+ for(const [date, rows] of Object.entries(history||{})){
+  if(!Array.isArray(rows))continue;
+  for(const x of rows){
+   if(!x)continue;
+   const id=String(x.id), p=eligible.get(id), v=Number(x.v), n=Number(x.q);
+   if(!p||!Number.isInteger(v)||!p.variants[v]||!Number.isSafeInteger(n)||n<=0)continue;
+   if(!sums.has(id))sums.set(id,{p,count:0,days:new Set(),last:'',variants:new Map()});
+   const a=sums.get(id);
+   a.count+=n; a.days.add(date); if(date>a.last)a.last=date;
+   const b=a.variants.get(v)||{v,count:0,last:''}; b.count+=n; if(date>b.last)b.last=date; a.variants.set(v,b);
+  }
+ }
+ return Array.from(sums.values()).sort((a,b)=>b.count-a.count||b.days.size-a.days.size||b.last.localeCompare(a.last)||a.p.name.localeCompare(b.p.name,'es')).slice(0,6).map(a=>({...a,preferred:[...a.variants.values()].sort((a,b)=>b.count-a.count||b.last.localeCompare(a.last)||a.v-b.v)[0]}));
+}
+ const palettes={
+   black:['#20252d','#e2e5eb','#b9c3d4'],
+   erica:['#1684ac','#d9f2fa','#7bd5f1'],
+   world:['#7443a6','#eee3fc','#caa7f5'],
+   hotel:['#987126','#faf0da','#e8c77c'],
+   aqua:['#087f83','#dcf6f1','#70dcd6'],
+   calm:['#6b57a2','#eee9fb','#c9b9f1'],
+   carbon:['#536477','#e4ebf2','#b8c9df'],
+   luxury:['#9a6a3a','#f9ebdd','#ebc197'],
+   wellness:['#3e795d','#e1f2e7','#91d5ac'],
+   essential:['#416da1','#e3edfa','#a8cbf6'],
+   deconova:['#a65b31','#fbe9dd','#f2b591'],
+   protector:['#3d8068','#e0f4eb','#90d5b7'],
+   base:['#637087','#e8ecf4','#bdcbe1'],
+   pillow:['#527292','#e2edf8','#a9cceb']
+ };
+ function palette(p){
+  const f=String(p.family||p.name||'').toLowerCase();
+  if(p.brand==='DECONOVA')return 'deconova';
+  if(f.includes('black'))return 'black';
+  if(f.includes('world class'))return 'world';
+  if(f.includes('erica')||f.includes('beautysleep'))return 'erica';
+  if(f.includes('hotel'))return 'hotel';
+  if(f.includes('aquacool'))return 'aqua';
+  if(f.includes('calm'))return 'calm';
+  if(f.includes('carbon'))return 'carbon';
+  if(f.includes('luxury'))return 'luxury';
+  if(f.includes('wellness'))return 'wellness';
+  if(f.includes('essential'))return 'essential';
+  if(p.cat==='Protectores')return 'protector';
+  if(p.cat==='Bases')return 'base';
+  return 'pillow';
+ }
+ function colorize(node,p){
+  if(!node||!p)return;
+  const colors=palettes[palette(p)];
+  node.classList.add('sicorp-family-color');
+  node.style.setProperty('--family-ink',colors[0]);
+  node.style.setProperty('--family-bg',colors[1]);
+  node.style.setProperty('--family-dark',colors[2]);
+ }
+ const style=document.createElement('style');
+ style.textContent=`
+ .sicorp-family-color{--family-tone:var(--family-ink);--family-tint:var(--family-bg)}
+ html[data-sicorp-theme="dark"] .sicorp-family-color{--family-tone:var(--family-dark);--family-tint:color-mix(in srgb,var(--family-dark) 13%,var(--surface))}
+ html[data-sicorp-theme] .family-toggle.sicorp-family-color{background:var(--family-tint);border-color:var(--line);border-inline-start:5px solid var(--family-tone);color:var(--text)}
+ html[data-sicorp-theme] .family-toggle.sicorp-family-color[aria-expanded="true"]{border-color:var(--family-tone)}
+ .family-toggle.sicorp-family-color .family-arrow,.family-toggle.sicorp-family-color .family-copy strong{color:var(--family-tone)}
+ html[data-sicorp-theme] .product.sicorp-family-color{border-inline-start:4px solid var(--family-tone)}
+ .product.sicorp-family-color .smalladd,.product.sicorp-family-color .tag{color:var(--family-tone)}
+ #sicorp-frequent{padding:15px;margin-bottom:18px}
+ .frequent-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:11px}
+ .frequent-heading h2{margin:0;font-size:19px}
+ .frequent-heading p{margin:4px 0 0;font-size:12px;color:var(--muted)}
+ .frequent-label{display:inline-block;font-size:10px;font-weight:750;color:var(--accent);background:var(--hero);padding:5px 8px;border-radius:99px;white-space:nowrap}
+ .frequent-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .frequent-item{position:relative;display:flex;flex-direction:column;align-items:stretch;text-align:left;min-width:0;min-height:135px;border:1px solid var(--line);border-top:4px solid var(--family-tone);border-radius:14px;background:var(--surface);padding:8px;gap:5px;overflow:hidden}
+ .frequent-item:active{background:var(--family-tint)}
+ .frequent-item img{width:100%;height:75px;object-fit:contain;background:white;border-radius:9px}
+ .frequent-item .frequent-family{font-size:10px;color:var(--family-tone);font-weight:750;line-height:1.25}
+ .frequent-item strong{font-size:13px;line-height:1.3;overflow-wrap:anywhere}
+ .frequent-item .frequent-size{font-size:11px;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
+ .frequent-item .frequent-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;font-size:11px;gap:3px;color:var(--family-tone);font-weight:750}
+ .frequent-item .frequent-add{border-radius:9px;background:var(--family-tint);font-size:20px;line-height:1;min-width:32px;text-align:center;padding:6px}
+ .frequent-empty{font-size:13px;color:var(--muted);padding:8px 0}
+ .frequent-date{font-size:11px;color:var(--muted);margin:10px 0 0}
+ .catalog-section-title{font-size:18px;margin:0 3px 10px;font-weight:800;color:var(--text)}
+ @media(min-width:560px){.frequent-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+ @media(max-width:320px){.frequent-grid{grid-template-columns:1fr}}
+ `;
+ document.head.appendChild(style);
+ const make=(tag,txt,cls)=>{const n=document.createElement(tag);if(txt)n.textContent=txt;if(cls)n.className=cls;return n;};
+ const section=make('section','','card');section.id='sicorp-frequent';
+ grid.parentNode.insertBefore(section,grid);
+ const title=make('h2','Catálogo completo','catalog-section-title');
+ grid.parentNode.insertBefore(title,grid);
+ function renderFrequent(){
+  const searching=!!search.value.trim();
+  section.classList.toggle('hidden',searching);
+  title.textContent=searching?'Resultados de búsqueda':'Catálogo completo';
+  if(searching)return;
+  section.replaceChildren();
+  const heading=make('div','','frequent-heading'), copy=make('div');
+  copy.append(make('h2','Más vendidos'),make('p','Según todo tu historial de ventas.'));
+  heading.append(copy,make('span','Acceso rápido','frequent-label'));section.append(heading);
+  const ranked=rankHistory(records,catalog,brand,cat);
+  if(!ranked.length){section.append(make('p','Todavía no hay ventas en esta selección. Los productos aparecerán aquí al registrarlos.','frequent-empty'));return;}
+  const cards=make('div','','frequent-grid');
+  ranked.forEach(a=>{
+    const p=a.p,v=a.preferred.v, item=make('button','','frequent-item');
+    item.type='button';colorize(item,p);
+    item.setAttribute('aria-label','Registrar '+label(p,p.variants[v])+', '+a.count+' unidades en historial');
+    const image=p.variants[v].photos?.[0]||p.photos?.[0];
+    if(image){const img=make('img');img.src=image;img.alt='';img.loading='lazy';item.append(img);}
+    item.append(make('span',p.family||p.cat,'frequent-family'),make('strong',p.name));
+    const pv=p.variants[v];
+    item.append(make('span','Habitual: '+[pv.size,p.cat==='Bases'?pv.height:''].filter(Boolean).join(' · '),'frequent-size'));
+    const footer=make('span','','frequent-footer');
+    footer.append(make('span',a.count+' vendida'+(a.count===1?'':'s')),make('span','+','frequent-add'));item.append(footer);
+    item.addEventListener('click',()=>{
+      open(p);variant=v;updateVariant();
+      colorize(document.getElementById('modal'),p);
+    });
+    cards.append(item);
+  });
+  section.append(cards,make('p','Elige un producto, confirma medida y cantidad. Registro: '+fmtDay(day)+'.','frequent-date'));
+ }
+ function decorateCatalog(){
+  grid.querySelectorAll('[data-family]').forEach(node=>{
+   const group=familyGroups[Number(node.dataset.family)];
+   const p=group&&catalog.find(p=>group[3].includes(p.id));
+   colorize(node,p);
+  });
+  grid.querySelectorAll('[data-product]').forEach(node=>colorize(node,catalog.find(p=>p.id===node.dataset.product)));
+ }
+ const originalCatalog=renderCatalog;
+ renderCatalog=function(){originalCatalog();decorateCatalog();renderFrequent();};
+ search.oninput=renderCatalog;
+ const originalOpen=open;
+ open=function(p){originalOpen(p);colorize(document.getElementById('modal'),p);};
+ renderCatalog();
+})();
