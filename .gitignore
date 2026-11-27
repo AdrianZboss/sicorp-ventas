@@ -1,0 +1,13 @@
+.gradle/
+.idea/
+build/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+*.iml
+.env
+keystore.properties
+Compilar_APK_Respaldo.ps1

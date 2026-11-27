@@ -1,0 +1,32 @@
+SICORPMATTRESS | REGISTRO DE VENTAS v1.2
+
+Proyecto Android: Java + WebView local. Sin permisos de Internet.
+40 modelos, 121 combinaciones de tamaño/altura potenciales del catálogo.
+Las imágenes se optimizaron para el teléfono: hasta tres fotos de galería por modelo,
+y fotografías específicas de variantes Deconova disponibles. No se incluyen todos los banners.
+Códigos faltantes no se inventaron. Las variantes potenciales deben confirmarse en tienda.
+
+PROBAR EN PC: abrir app/src/main/assets/index.html con Chrome o Edge.
+El almacenamiento del navegador es independiente del de la APK.
+
+COMPILAR EN WINDOWS:
+1. Instalar Android Studio desde https://developer.android.com/studio
+2. En SDK Manager, instalar Android SDK Platform 35 y Android SDK Build-Tools 35.0.0.
+3. Extraer la carpeta completa del ZIP. Abrir PowerShell dentro de esa carpeta.
+4. Ejecutar: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Compilar_APK.ps1
+5. Si finaliza correctamente, se creará Sicorpmattress_Ventas.apk en esta misma carpeta.
+6. Copiar ese archivo al teléfono y abrirlo; autorizar instalación de esa fuente solo si es necesario.
+
+Alternativa: abrir la carpeta en Android Studio, sincronizar Gradle y usar Build > Generate APK(s).
+La compilación requiere conexión a Internet la primera vez para descargar Gradle y dependencias oficiales.
+El APK de depuración queda firmado por Gradle; conservar el mismo archivo de clave debug de Windows para actualizarlo.
+
+REGISTROS: se guardan por fecha. No se imprime fecha ni precio en WhatsApp.
+Los sets se registran como unidad comercial. Respaldo JSON en Historial.
+Antes de desinstalar, copiar el respaldo a un archivo seguro.
+
+LIMITACIÓN: no se pudo compilar ni ejecutar en Android en el entorno de creación (no cuenta con SDK).
+
+Versión 1.1: diseño adaptable, orientación horizontal, áreas seguras, controles táctiles y ventanas de selección con scroll. Mantiene los IDs de catálogo y el formato de respaldo v1.
+
+Versión 1.2: familias desplegables en orden comercial; reportes detallado (predeterminado) y compacto opcional, encabezado RESUMEN, categorías sin ventas ocultas. Mismos IDs, variantes y clave de almacenamiento; respaldo compatible. El HTML separado puede tener almacenamiento independiente según el navegador.
