@@ -1,7 +1,7 @@
 name: Verificar SICORP Cloud
 on:
   push:
-    branches: [sicorp-web-cloud, sicorp-offline-test, sicorp-report-test]
+    branches: [main, sicorp-web-cloud, sicorp-offline-test, sicorp-report-test]
     paths:
       - 'app/**'
       - 'web/**'

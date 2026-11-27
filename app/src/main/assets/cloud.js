@@ -43,6 +43,7 @@ function merge(b,l,r,initial){
 }
 let meta={base:null,pending:null,owner:null},session=null,epoch=0,busy=false,conflict=false,callbacks=new Map(),seq=0,timer,expiry;
 let unlocked=false,locking=false,owner=null,refreshToken=null,sessionUntil=0, vaultKey=null,vaultSalt=null, vaultStore=null, vaultWrites=0,vaultFailed=false,vaultTail=Promise.resolve(),releaseBrowserLock=null;
+let savedDraft=null;
 const vaultName='sicorp.account.v3', encoder=new TextEncoder(),decoder=new TextDecoder();
 const b64=bytes=>{let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);};
 const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -102,7 +103,7 @@ function freeBrowserLock(){if(releaseBrowserLock){releaseBrowserLock();releaseBr
 function queueVault(){
  if(!unlocked||!vaultKey||!vaultStore)return false;
  const key=vaultKey,salt=vaultSalt,mode=vaultStore;
- const value={owner,refreshToken,verifiedAt:Date.now(),...(native?{}:{records:canonical(records),meta:clone(meta)})};
+ const value={owner,refreshToken,verifiedAt:Date.now(),draft:savedDraft,...(native?{}:{records:canonical(records),meta:clone(meta)})};
  vaultWrites++;
  vaultTail=vaultTail.catch(()=>{}).then(async()=>{const raw=await seal(key,salt,value);writeVault(raw,mode);vaultFailed=false;}).catch(err=>{vaultFailed=true;status('No se pudo guardar la copia local. Mantén abierta la aplicación.');throw err;}).finally(()=>{vaultWrites--;});
  vaultTail.catch(()=>{});return true;
@@ -180,21 +181,61 @@ function dirty(){return !!meta.pending||!meta.base||!equal(records,meta.base.rec
 function showLogin(){
  if(!login.open){pass.inputMode='numeric';keyboard.textContent='ABC';keyboard.setAttribute('aria-label','Cambiar a teclado completo');pass.value='';login.showModal();}else pass.value='';
 }
-function resetIdle(){clearTimeout(timer);if(unlocked&&!native&&vaultStore!=='local')timer=setTimeout(()=>endSession(true),300000);}
-for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,resetIdle,{passive:true});
+// Idle policy applies equally to Android and every browser storage mode.
+const idleOptions=[5,10,15,30,60];
+let idleMinutes=5,idleDeadline=0;
+try{const n=Number(localStorage.getItem('sicorp.idle.minutes'));if(idleOptions.includes(n))idleMinutes=n;}catch{}
+const security=element('label','Bloqueo automático: '),idleSelect=element('select');
+security.id='sicorp-idle-settings';security.hidden=true;idleSelect.setAttribute('aria-label','Minutos de inactividad');
+for(const n of idleOptions){const option=element('option',n===60?'1 hora':n+' min');option.value=String(n);idleSelect.append(option);}
+idleSelect.value=String(idleMinutes);security.append(idleSelect);bar.append(security);
+const idleDialog=element('dialog'),idleTitle=element('h2','Tu sesión está por bloquearse'),idleCount=element('p','00:30'),idleHelp=element('p','Tus ventas guardadas y la selección pendiente se conservarán. Vuelve a ingresar tu clave para acceder.'),keep=element('button','Mantener sesión activa'),lockNow=element('button','Bloquear ahora');
+idleDialog.id='sicorp-idle-warning';idleTitle.id='sicorp-idle-title';idleDialog.setAttribute('aria-labelledby',idleTitle.id);idleCount.id='sicorp-idle-count';keep.type=lockNow.type='button';keep.className='full primary';lockNow.className='full';idleDialog.append(idleTitle,idleCount,idleHelp,keep,lockNow);document.body.append(idleDialog);
+const idleStyle=element('style');idleStyle.textContent='#sicorp-idle-settings{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}#sicorp-idle-settings[hidden]{display:none!important}#sicorp-idle-settings select{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px}#sicorp-idle-warning{width:min(360px,calc(100vw - 36px));box-sizing:border-box;background:var(--surface);color:var(--text);text-align:center}#sicorp-idle-warning::backdrop{background:#0009}#sicorp-idle-count{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;margin:12px 0}#sicorp-idle-warning button{margin-top:8px}';document.head.append(idleStyle);
+function hideIdle(){if(idleDialog.open)idleDialog.close();}
+function stopIdle(){clearTimeout(timer);idleDeadline=0;hideIdle();}
+function checkIdle(){
+ clearTimeout(timer);
+ if(!unlocked||locking||!idleDeadline)return;
+ const left=idleDeadline-Date.now();
+ if(left<=0){endSession(true);return;}
+ if(left<=30000&&!document.hidden){
+  idleCount.textContent='00:'+String(Math.ceil(left/1000)).padStart(2,'0');
+  if(!idleDialog.open)idleDialog.showModal();
+ }
+ timer=setTimeout(checkIdle,left>30000?left-30000:Math.min(1000,left));
+}
+function resetIdle(){
+ if(!unlocked||locking)return;
+ if(idleDeadline&&Date.now()>=idleDeadline){checkIdle();return;}
+ idleDeadline=Date.now()+idleMinutes*60000;hideIdle();checkIdle();
+}
+function idleActivity(ev){
+ if(!unlocked)return;
+ if(locking||(idleDeadline&&Date.now()>=idleDeadline)){ev.preventDefault();ev.stopImmediatePropagation();checkIdle();return;}
+ if(!idleDialog.open)resetIdle();
+}
+for(const ev of ['pointerdown','keydown','input','wheel'])document.addEventListener(ev,idleActivity,{capture:true,passive:false});
+idleDialog.addEventListener('cancel',e=>e.preventDefault());
+keep.onclick=resetIdle;lockNow.onclick=()=>endSession(true);
+idleSelect.onchange=()=>{if(!idleOptions.includes(Number(idleSelect.value)))return;idleMinutes=Number(idleSelect.value);try{localStorage.setItem('sicorp.idle.minutes',String(idleMinutes));}catch{}resetIdle();};
+document.addEventListener('visibilitychange',checkIdle);window.addEventListener('pageshow',checkIdle);window.sicorpCheckIdle=checkIdle;
 async function endSession(automatic){
  if(!unlocked||locking)return;
+ const draft=window.sicorpCaptureDraft?.()||null;
  const pending=dirty()&&(!meta.base||!empty(records)||meta.pending),old=session;
  if(!automatic&&pending&&!confirm('Hay cambios pendientes. Se conservarán en este dispositivo'+(!native&&vaultStore==='session'?' mientras esta pestaña siga abierta':'')+'. ¿Bloquear el acceso?'))return;
- locking=true;logoutButton.disabled=true;const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
- try{if(!native){if(pending)queueVault();await flushVault();}else if(!save())throw Error('Copia local no confirmada');}
- catch{locking=false;logoutButton.disabled=false;status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
+ locking=true;logoutButton.disabled=true;keep.disabled=lockNow.disabled=true;const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
+ savedDraft=draft;
+ try{if(native&&!save())throw Error('Copia local no confirmada');if(!queueVault())throw Error('Copia local no confirmada');await flushVault();}
+ catch{savedDraft=null;locking=false;logoutButton.disabled=false;keep.disabled=lockNow.disabled=false;idleDeadline=0;status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
  if(e!==epoch)return;
  const mode=vaultStore;
- if(!native&&mode==='session'&&!pending){try{clearVault(mode);}catch{}if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});}
+ if(!native&&mode==='session'&&!pending&&!draft){try{clearVault(mode);}catch{}if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});}
+ stopIdle();savedDraft=null;security.hidden=true;keep.disabled=lockNow.disabled=false;
  unlocked=false;locking=false;logoutButton.disabled=false;session=null;refreshToken=null;sessionUntil=0;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;vaultFailed=false;records={};last={};meta={base:null,pending:null,owner:null};conflict=false;
  if($('modal')?.open)$('modal').close();$('restoretext').value='';render();
- evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Iniciar sesión';logoutButton.hidden=true;status('Acceso privado');freeBrowserLock();showLogin();msg.textContent='Introduce tu clave para acceder a tu cuenta.';
+ evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Iniciar sesión';logoutButton.hidden=true;status('Acceso privado');freeBrowserLock();showLogin();msg.textContent=automatic?'Sesión bloqueada por seguridad. Introduce tu clave para continuar.':'Introduce tu clave para acceder a tu cuenta.';
 }
 window.addEventListener('beforeunload',e=>{if(!native&&(vaultWrites||vaultFailed||(unlocked&&vaultStore==='session'&&dirty()))){e.preventDefault();e.returnValue='';}});
 window.sicorpCloudReceive=(id,code,body)=>{const f=callbacks.get(id);if(f){callbacks.delete(id);f(Number(code),body);}};
@@ -314,7 +355,7 @@ persist=function(){
 };
 form.onsubmit=async ev=>{
  ev.preventDefault();if(enter.disabled)return;enter.disabled=true;msg.textContent='Verificando acceso…';const secret=pass.value;pass.value='';
- let existing,opened=null,online=null,mode;
+ let existing,opened=null,online=null,mode,restoreDraft=null;
  try{
   existing=getVault();mode=native?'native':(trust.checked?'local':'session');
   if(!native&&(existing.store==='local'||mode==='local')){if(!await acquireBrowserLock())throw Error('Cierra la otra pestaña SICORP para proteger tu copia local.');existing=getVault();}
@@ -330,20 +371,21 @@ form.onsubmit=async ev=>{
   if(opened){vaultKey=opened.key;vaultSalt=opened.salt;}
   else{vaultSalt=random(16);vaultKey=await derive(secret,vaultSalt);}
   if(!vaultKey)throw Error('No se pudo proteger la sesión local.');
+  restoreDraft=opened?.data.draft||null;savedDraft=null;
   vaultStore=mode;unlocked=true;conflict=false;epoch++;meta.owner=owner;
   if(!save()||!queueVault())throw Error('No se pudo guardar la copia de la cuenta.');
   await flushVault();
   if(!native&&existing.store&&existing.store!==mode)clearVault(existing.store);
-  login.close();resetIdle();render();syncButton.textContent='Sincronizar';logoutButton.textContent='Bloquear sesión';logoutButton.hidden=false;evidence.hidden=!session;
+  login.close();security.hidden=false;resetIdle();render();if(restoreDraft)window.sicorpRestoreDraft?.(restoreDraft);syncButton.textContent='Sincronizar';logoutButton.textContent='Bloquear sesión';logoutButton.hidden=false;evidence.hidden=!session;
   status(session?'Cuenta conectada · sincronizando…':'Sin conexión · datos locales protegidos');
   sync();if(session)listFiles();
  }catch(e){
-  unlocked=false;session=null;sessionUntil=0;refreshToken=null;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;records={};last={};meta={base:null,pending:null,owner:null};freeBrowserLock();render();
+  stopIdle();savedDraft=null;security.hidden=true;unlocked=false;session=null;sessionUntil=0;refreshToken=null;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;records={};last={};meta={base:null,pending:null,owner:null};freeBrowserLock();render();
   msg.textContent=e?.message?.startsWith('Clave incorrecta')||e?.message?.startsWith('Cierra')||e?.message?.includes('copia')||e?.message?.includes('cuenta')?e.message:'No se pudo acceder. Verifica tu clave e internet. El primer acceso requiere conexión.';
  }finally{enter.disabled=false;}
 };
 syncButton.onclick=async()=>{if(locking)return;if(!unlocked){showLogin();return;}if(!refreshToken&&!session){await endSession(false);return;}conflict=false;sync();};
 logoutButton.onclick=()=>endSession(false);
-setInterval(()=>{if(unlocked&&!conflict)sync();},12000);window.addEventListener('online',()=>{if(unlocked)sync();});window.addEventListener('offline',()=>{if(unlocked)status('Sin conexión · guardado local activo');});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&unlocked)sync();});
+setInterval(()=>{if(unlocked&&!conflict)sync();},12000);window.addEventListener('online',()=>{if(unlocked)sync();});window.addEventListener('offline',()=>{if(unlocked)status('Sin conexión · guardado local activo');});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&unlocked&&!locking)sync();});
 status('Acceso privado');render();showLogin();
 })();

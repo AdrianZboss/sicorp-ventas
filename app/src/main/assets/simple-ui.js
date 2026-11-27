@@ -349,6 +349,13 @@
   if(!persist()){if(had)records[day]=before;else delete records[day];saving=false;refresh();return;}
   pending=pending.map(()=>0);modal.close();render();notify(units+' unidad'+(units===1?' registrada':'es registradas'));saving=false;
  };
+ window.sicorpCaptureDraft=()=>modal.open&&!saving&&product&&sum()>0?{id:String(product.id),day:openedDay,quantities:pending.slice()}:null;
+ window.sicorpRestoreDraft=d=>{
+  if(!d||!/^\d{4}-\d{2}-\d{2}$/.test(d.day)||!Array.isArray(d.quantities))return;
+  const p=catalog.find(x=>String(x.id)===d.id);
+  if(!p||p.variants.length!==d.quantities.length||!d.quantities.every(n=>Number.isInteger(n)&&n>=0&&n<=999)||!d.quantities.some(n=>n>0))return;
+  day=d.day;render();open(p);pending=d.quantities.slice();refresh();notify('Selección pendiente recuperada. Confirma para registrar.');
+ };
  modal.addEventListener('close',()=>{pending=[];controls=[];saving=false;});
 })();
 
