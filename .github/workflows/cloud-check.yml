@@ -1,0 +1,47 @@
+name: Verificar SICORP Cloud
+on:
+  push:
+    branches: [sicorp-web-cloud]
+    paths:
+      - 'app/**'
+      - 'web/**'
+      - '.github/workflows/cloud-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verificar JavaScript
+        run: |
+          node --check app/src/main/assets/cloud.js
+          node --check app/src/main/assets/simple-ui.js
+          node --check app/src/main/assets/theme.js
+          node --check web/boot.js
+          node - <<'JS'
+          const fs=require('fs'), assert=require('assert');
+          const c=fs.readFileSync('app/src/main/assets/cloud.js','utf8');
+          const code=c.slice(c.indexOf('const clone='),c.indexOf('let meta='));
+          const {merge}=new Function('catalog',code+';return {merge};')([{id:'17',variants:[{}]}]);
+          const r=q=>q?{'2026-11-27':[{id:'17',v:0,q}]}:{};
+          assert.equal(merge(r(2),r(3),r(4),false).records['2026-11-27'][0].q,5);
+          assert.equal(merge(r(5),r(2),r(8),false).conflicts.length,1);
+          assert.equal(merge({},r(2),r(3),true).conflicts.length,1);
+          JS
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: android-actions/setup-android@v3
+      - name: Compilar sin publicar
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          gradle --no-daemon :app:assembleRelease
