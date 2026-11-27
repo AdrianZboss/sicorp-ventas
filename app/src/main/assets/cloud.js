@@ -42,7 +42,7 @@ function merge(b,l,r,initial){
  return {records:canonical(out),conflicts};
 }
 let meta={base:null,pending:null,owner:null},session=null,epoch=0,busy=false,conflict=false,callbacks=new Map(),seq=0,timer,expiry;
-let unlocked=false,owner=null,refreshToken=null,sessionUntil=0, vaultKey=null,vaultSalt=null, vaultStore=null, vaultWrites=0,vaultFailed=false,vaultTail=Promise.resolve(),releaseBrowserLock=null;
+let unlocked=false,locking=false,owner=null,refreshToken=null,sessionUntil=0, vaultKey=null,vaultSalt=null, vaultStore=null, vaultWrites=0,vaultFailed=false,vaultTail=Promise.resolve(),releaseBrowserLock=null;
 const vaultName='sicorp.account.v3', encoder=new TextEncoder(),decoder=new TextDecoder();
 const b64=bytes=>{let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);};
 const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -187,16 +187,16 @@ function showLogin(){
 function resetIdle(){clearTimeout(timer);if(unlocked&&!native&&vaultStore!=='local')timer=setTimeout(()=>endSession(true),300000);}
 for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,resetIdle,{passive:true});
 async function endSession(automatic){
- if(!unlocked)return;
+ if(!unlocked||locking)return;
  const pending=dirty()&&(!meta.base||!empty(records)||meta.pending),old=session;
  if(!automatic&&pending&&!confirm('Hay cambios pendientes. Se conservarán en este dispositivo'+(!native&&vaultStore==='session'?' mientras esta pestaña siga abierta':'')+'. ¿Bloquear el acceso?'))return;
- const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
- try{if(!native&&pending){queueVault();await flushVault();}else if(native&&!save())throw Error('Copia local no confirmada');}
- catch{status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
+ locking=true;logoutButton.disabled=true;const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
+ try{if(!native){if(pending)queueVault();await flushVault();}else if(!save())throw Error('Copia local no confirmada');}
+ catch{locking=false;logoutButton.disabled=false;status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
  if(e!==epoch)return;
  const mode=vaultStore;
  if(!native&&mode==='session'&&!pending){try{clearVault(mode);}catch{}if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});}
- unlocked=false;session=null;refreshToken=null;sessionUntil=0;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;vaultFailed=false;records={};last={};meta={base:null,pending:null,owner:null};conflict=false;
+ unlocked=false;locking=false;logoutButton.disabled=false;session=null;refreshToken=null;sessionUntil=0;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;vaultFailed=false;records={};last={};meta={base:null,pending:null,owner:null};conflict=false;
  if($('modal')?.open)$('modal').close();$('restoretext').value='';render();
  evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Iniciar sesión';logoutButton.hidden=true;status('Acceso privado');freeBrowserLock();showLogin();msg.textContent='Introduce tu clave para acceder a tu cuenta.';
 }
@@ -242,7 +242,7 @@ function adopt(remote){
  if(!save()){meta=prevMeta;records=prev;throw Error('No se pudo guardar el historial');}render();return true;
 }
 async function sync(){
- if(!unlocked||busy||conflict)return;
+ if(!unlocked||locking||busy||conflict)return;
  if(!native&&navigator.onLine===false){status('Sin conexión · ventas guardadas localmente');return;}
  busy=true;const e=epoch;status('Sincronizando…');
  try{
@@ -253,7 +253,7 @@ async function sync(){
    const remote=await pull();if(e!==epoch||!session)return;
    if(!meta.base||remote.revision!==meta.base.revision){if(!adopt(remote))return;}
   }
-  if(!meta.pending&&equal(records,meta.base.records)){status('☁ Sincronizado');return;}
+  if(!meta.pending&&equal(records,meta.base.records)){await flushVault();if(e===epoch)status('☁ Sincronizado');return;}
   if(!meta.pending){
    meta.pending={id:uuid(),expected:meta.base.revision,records:canonical(records)};
    if(!save()){meta.pending=null;throw Error('No se pudo conservar la operación');}
@@ -310,7 +310,7 @@ refreshFiles.onclick=listFiles;
 window.sicorpEvidenceResult=(ok,message)=>{if(session){evidenceStatus(message);if(ok)listFiles();}};
 
 persist=function(){
- if(!unlocked){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
+ if(!unlocked||locking){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
  if(!save()){rollbackLocal();notify('No se pudo guardar el historial.');return false;}
  if(native){status('Guardado localmente · sincronización pendiente');setTimeout(sync,0);}
  else {status('Guardando copia local cifrada…');flushVault().then(()=>{if(unlocked){status('Copia local guardada · sincronización pendiente');sync();}}).catch(()=>notify('No se confirmó el guardado local. No cierres esta pestaña.'));}
@@ -346,7 +346,7 @@ form.onsubmit=async ev=>{
   msg.textContent=e?.message?.startsWith('Clave incorrecta')||e?.message?.startsWith('Cierra')||e?.message?.includes('copia')||e?.message?.includes('cuenta')?e.message:'No se pudo acceder. Verifica tu clave e internet. El primer acceso requiere conexión.';
  }finally{enter.disabled=false;}
 };
-syncButton.onclick=async()=>{if(!unlocked){showLogin();return;}if(!refreshToken&&!session){await endSession(false);return;}conflict=false;sync();};
+syncButton.onclick=async()=>{if(locking)return;if(!unlocked){showLogin();return;}if(!refreshToken&&!session){await endSession(false);return;}conflict=false;sync();};
 logoutButton.onclick=()=>endSession(false);
 setInterval(()=>{if(unlocked&&!conflict)sync();},12000);window.addEventListener('online',()=>{if(unlocked)sync();});window.addEventListener('offline',()=>{if(unlocked)status('Sin conexión · guardado local activo');});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&unlocked)sync();});
 status('Acceso privado');render();showLogin();

@@ -5,6 +5,8 @@ on:
     paths:
       - 'app/**'
       - 'web/**'
+      - 'sw.js'
+      - 'tests/**'
       - '.github/workflows/cloud-check.yml'
   workflow_dispatch:
 permissions:
@@ -81,6 +83,7 @@ jobs:
             } finally {await browser.close();}
           })().catch(e=>{console.error(e);process.exit(1)});
           JS
+          node tests/offline-account.cjs
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
