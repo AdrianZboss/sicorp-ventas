@@ -32,6 +32,10 @@ final class UpdateManager {
     private final SharedPreferences prefs;
     private volatile boolean busy=false, cancelled=false, closed=false;
     private boolean pendingPermission=false;
+    private volatile boolean foreground=false;
+    private long lastAutoCheck=-1;
+    private static final long AUTO_INTERVAL=5L*60*1000;
+    private AlertDialog updatePrompt;
     private volatile ProgressDialog progress;
     private volatile AlertDialog authorization;
 
@@ -58,12 +62,21 @@ final class UpdateManager {
         busy=true;cancelled=false;
         new Thread(()->{try{r.run();}finally{busy=false;}},"sicorp-updater").start();
     }
-    void close(){closed=true;cancelled=true;if(progress!=null)progress.dismiss();if(authorization!=null)authorization.dismiss();}
+    void close(){closed=true;cancelled=true;if(progress!=null)progress.dismiss();if(authorization!=null)authorization.dismiss();if(updatePrompt!=null)updatePrompt.dismiss();}
+    void pause(){foreground=false;}
     void resume(){
-        if(!pendingPermission)return;
-        pendingPermission=false;
-        if(a.getPackageManager().canRequestPackageInstalls())offerInstall();
-        else message("Permiso pendiente","Puedes volver a pulsar Actualizar app para intentarlo de nuevo.");
+        foreground=true;
+        if(pendingPermission){
+            pendingPermission=false;
+            if(a.getPackageManager().canRequestPackageInstalls())offerInstall();
+            else message("Permiso pendiente","Puedes volver a pulsar Actualizar app para intentarlo de nuevo.");
+            return;
+        }
+        if(busy||closed||(updatePrompt!=null&&updatePrompt.isShowing()))return;
+        long now=SystemClock.elapsedRealtime();
+        if(lastAutoCheck>=0&&now-lastAutoCheck<AUTO_INTERVAL)return;
+        lastAutoCheck=now;
+        start(()->check(false));
     }
     void open(){
         if(busy)return;
@@ -199,7 +212,7 @@ final class UpdateManager {
             throw new IOException("El código de autorización caducó.");
         }finally{ui(()->{if(authorization!=null){authorization.dismiss();authorization=null;}});}
     }
-    private JSONObject token(boolean forceRefresh)throws Exception {
+    private JSONObject token(boolean forceRefresh,boolean manual)throws Exception {
         JSONObject t=loadToken();
         if(t!=null&&!forceRefresh&&t.optLong("expires_at")>System.currentTimeMillis()+60000)return t;
         if(t!=null&&!t.optString("refresh_token").isEmpty()){
@@ -209,6 +222,7 @@ final class UpdateManager {
                 saveToken(fresh);return fresh;
             }
         }
+        if(!manual)return null;
         prefs.edit().remove("token").commit();return authorize();
     }
     private JSONObject latest(String token)throws Exception {
@@ -232,18 +246,36 @@ final class UpdateManager {
         ui(()->{if(progress!=null)progress.dismiss();progress=new ProgressDialog(a,dialogTheme());progress.setTitle(title);progress.setMessage(body);progress.setProgressStyle(horizontal?ProgressDialog.STYLE_HORIZONTAL:ProgressDialog.STYLE_SPINNER);progress.setMax(100);progress.setCancelable(false);progress.show();});
     }
     private void hideProgress(){ui(()->{if(progress!=null){progress.dismiss();progress=null;}});}
-    private void check(){
+    private void check(){check(true);}
+    private void check(boolean manual){
         try{
-            if(apk().isFile()&&prefs.getInt("download_code",0)>installedCode()){validate(apk(),null);ui(this::offerInstall);return;}
-            cleanup();showProgress("Actualizaciones","Consultando GitHub…",false);
-            JSONObject t=token(false);if(t==null)return;
+            if(apk().isFile()&&prefs.getInt("download_code",0)>installedCode()){
+                validate(apk(),null);
+                ui(()->{if(manual||foreground)offerInstall();});
+                return;
+            }
+            cleanup();
+            if(manual)showProgress("Actualizaciones","Consultando GitHub…",false);
+            JSONObject t=token(false,manual);
+            if(t==null){
+                if(!manual&&!prefs.getBoolean("setup_offered",false))ui(()->{
+                    if(!foreground||closed||prefs.getBoolean("setup_offered",false))return;
+                    prefs.edit().putBoolean("setup_offered",true).apply();
+                    updatePrompt=new AlertDialog.Builder(a,dialogTheme()).setTitle("Activar actualizaciones automáticas")
+                        .setMessage("Autoriza tu cuenta de GitHub una vez para recibir avisos y descargar las nuevas versiones desde Sicorp Ventas.")
+                        .setPositiveButton("Activar",(d,w)->start(this::check))
+                        .setNegativeButton("Más tarde",null).create();
+                    updatePrompt.show();
+                });
+                return;
+            }
             JSONObject release=latest(t.getString("access_token"));
-            if(release==null){t=token(true);if(t==null)return;release=latest(t.getString("access_token"));}
+            if(release==null){t=token(true,manual);if(t==null)return;release=latest(t.getString("access_token"));}
             if(release==null)throw new IOException("La autorización no es válida. Cierra sesión y vuelve a autorizar.");
             String tag=release.getString("tag_name");
             if(!tag.matches("v[0-9]+(\\.[0-9]+){1,2}"))throw new IOException("Versión no reconocida.");
             String version=tag.substring(1);
-            if(compare(version,installedName())<=0){message("Estás al día","Sicorp Ventas "+installedName()+" es la última versión disponible.");return;}
+            if(compare(version,installedName())<=0){if(manual)message("Estás al día","Sicorp Ventas "+installedName()+" es la última versión disponible.");return;}
             JSONArray assets=release.getJSONArray("assets");JSONObject asset=null;
             for(int i=0;i<assets.length();i++){JSONObject x=assets.getJSONObject(i);if("Sicorp_Ventas.apk".equals(x.optString("name")))asset=x;}
             if(asset==null)throw new IOException("La nueva versión todavía no tiene una APK publicada.");
@@ -251,10 +283,18 @@ final class UpdateManager {
             String digest=asset.optString("digest","");
             if(size<=0||size>LIMIT)throw new IOException("Tamaño de actualización no válido.");
             final String access=t.getString("access_token");
-            hideProgress();ui(()->new AlertDialog.Builder(a,dialogTheme()).setTitle("Nueva versión "+version).setMessage("Tamaño: "+String.format(java.util.Locale.US,"%.1f",size/1048576.0)+" MB\nLa descarga se guardará de forma temporal dentro de Sicorp Ventas.")
-              .setPositiveButton("Descargar e instalar",(d,w)->start(()->download(id,size,digest,access,version))).setNegativeButton("Después",null).show());
-        }catch(Exception e){if(networkFailure(e))connectionError(e,true);else message("No se pudo actualizar",safe(e));}finally{hideProgress();}
+            hideProgress();ui(()->{
+                if(!manual&&!foreground)return;
+                if(updatePrompt!=null&&updatePrompt.isShowing())return;
+                updatePrompt=new AlertDialog.Builder(a,dialogTheme()).setTitle("Actualización disponible")
+                    .setMessage("Hemos detectado una nueva versión de Sicorp Ventas.\n\nVersión instalada: "+currentVersion()+"\nNueva versión: "+version+"\nTamaño: "+String.format(java.util.Locale.US,"%.1f",size/1048576.0)+" MB")
+                    .setPositiveButton("Actualizar ahora",(d,w)->start(()->download(id,size,digest,access,version)))
+                    .setNegativeButton("Más tarde",null).create();
+                updatePrompt.show();
+            });
+        }catch(Exception e){if(manual){if(networkFailure(e))connectionError(e,true);else message("No se pudo actualizar",safe(e));}else android.util.Log.w("SicorpUpdater","Auto check failed: "+e.getClass().getSimpleName());}finally{if(manual)hideProgress();}
     }
+    private String currentVersion(){try{return installedName();}catch(Exception e){return "Desconocida";}}
     private String safe(Exception e){return e instanceof IOException&&e.getMessage()!=null&&!e.getMessage().contains("http")?e.getMessage():"Comprueba tu conexión e inténtalo de nuevo.";}
     private static String hex(byte[] bytes){StringBuilder b=new StringBuilder();for(byte x:bytes)b.append(String.format(java.util.Locale.US,"%02x",x&255));return b.toString();}
     private void download(long id,long size,String digest,String token,String version){
