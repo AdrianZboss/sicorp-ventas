@@ -4,6 +4,9 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.*;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.*;
 import android.provider.Settings;
 import android.security.keystore.KeyGenParameterSpec;
@@ -92,9 +95,44 @@ final class UpdateManager {
         if(!prefs.edit().putString("token",value).commit())throw new IOException("No se pudo guardar la sesión.");
     }
     private static String enc(String s)throws Exception{return URLEncoder.encode(s,"UTF-8");}
+    private boolean hasNetwork(){
+        ConnectivityManager cm=(ConnectivityManager)a.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if(cm==null)return true;
+        Network network=cm.getActiveNetwork();
+        NetworkCapabilities caps=network==null?null:cm.getNetworkCapabilities(network);
+        return caps!=null&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    }
+    private boolean networkFailure(Throwable e){
+        for(Throwable t=e;t!=null;t=t.getCause()){
+            if(t instanceof UnknownHostException||t instanceof SocketTimeoutException||t instanceof ConnectException||t instanceof NoRouteToHostException)return true;
+            if(t.getCause()==t)break;
+        }
+        return false;
+    }
+    private void connectionError(Exception e,boolean checking){
+        String body=!hasNetwork()?"No hay una conexión a Internet activa. Activa Wi-Fi o datos móviles.": "No se pudo conectar con GitHub. Prueba con datos móviles u otra red Wi-Fi. Si usas DNS privado o VPN, revisa su configuración y vuelve a buscar.";
+        ui(()->{
+            AlertDialog.Builder d=new AlertDialog.Builder(a,dialogTheme()).setTitle("Conexión no disponible").setMessage(body)
+              .setNeutralButton("Ajustes de red",(dialog,w)->{try{a.startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));}catch(Exception ignored){}})
+              .setNegativeButton("Cerrar",null);
+            if(checking)d.setPositiveButton("Reintentar",(dialog,w)->start(this::check));
+            else d.setPositiveButton("Buscar de nuevo",(dialog,w)->start(this::check));
+            d.show();
+        });
+    }
+    private void resolveHost(URL url)throws Exception {
+        UnknownHostException last=null;
+        for(int attempt=0;attempt<3;attempt++){
+            if(cancelled||closed)throw new IOException("Operación cancelada.");
+            try{InetAddress.getAllByName(url.getHost());return;}
+            catch(UnknownHostException e){last=e;if(attempt<2)Thread.sleep(1200L*(attempt+1));}
+        }
+        throw last;
+    }
     private HttpURLConnection connection(String address,String token,String accept)throws Exception {
         URL url=new URL(address);
         if(!"https".equals(url.getProtocol()))throw new IOException("Conexión no segura.");
+        resolveHost(url);
         HttpURLConnection c=(HttpURLConnection)url.openConnection();
         c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Accept",accept);c.setRequestProperty("User-Agent","SicorpVentasUpdater");
@@ -189,6 +227,7 @@ final class UpdateManager {
         try{
             if(apk().isFile()&&prefs.getInt("download_code",0)>installedCode()){validate(apk(),null);ui(this::offerInstall);return;}
             cleanup();showProgress("Actualizaciones","Consultando GitHub…",false);
+            if(!hasNetwork())throw new UnknownHostException("No hay red activa.");
             JSONObject t=token(false);if(t==null)return;
             JSONObject release=latest(t.getString("access_token"));
             if(release==null){t=token(true);if(t==null)return;release=latest(t.getString("access_token"));}
@@ -206,7 +245,7 @@ final class UpdateManager {
             final String access=t.getString("access_token");
             hideProgress();ui(()->new AlertDialog.Builder(a,dialogTheme()).setTitle("Nueva versión "+version).setMessage("Tamaño: "+String.format(java.util.Locale.US,"%.1f",size/1048576.0)+" MB\nLa descarga se guardará de forma temporal dentro de Sicorp Ventas.")
               .setPositiveButton("Descargar e instalar",(d,w)->start(()->download(id,size,digest,access,version))).setNegativeButton("Después",null).show());
-        }catch(Exception e){message("No se pudo actualizar",safe(e));}finally{hideProgress();}
+        }catch(Exception e){if(networkFailure(e))connectionError(e,true);else message("No se pudo actualizar",safe(e));}finally{hideProgress();}
     }
     private String safe(Exception e){return e instanceof IOException&&e.getMessage()!=null&&!e.getMessage().contains("http")?e.getMessage():"Comprueba tu conexión e inténtalo de nuevo.";}
     private static String hex(byte[] bytes){StringBuilder b=new StringBuilder();for(byte x:bytes)b.append(String.format(java.util.Locale.US,"%02x",x&255));return b.toString();}
@@ -243,7 +282,7 @@ final class UpdateManager {
             if(!partial().renameTo(apk()))throw new IOException("No se pudo guardar la actualización.");
             prefs.edit().putInt("download_code",code).commit();
             hideProgress();ui(this::offerInstall);
-        }catch(Exception e){cleanup();message("Descarga no completada",safe(e));}
+        }catch(Exception e){cleanup();if(networkFailure(e))connectionError(e,false);else message("Descarga no completada",safe(e));}
         finally{if(c!=null)c.disconnect();hideProgress();}
     }
     private int validate(File file,String version)throws Exception {
