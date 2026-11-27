@@ -45,7 +45,7 @@ let meta={base:null,pending:null},session=null,epoch=0,busy=false,conflict=false
 try{if(native){const m=JSON.parse(Native.cloudMeta()||'{}');if(m.base&&Number.isSafeInteger(m.base.revision)){m.base.records=canonical(m.base.records);meta.base=m.base;}if(m.pending){m.pending.records=canonical(m.pending.records);meta.pending=m.pending;}}else records={};records=canonical(records);}catch(e){conflict=true;}
 let last=clone(records);
 const element=(tag,t)=>{const n=document.createElement(tag);if(t!==undefined)n.textContent=t;return n;};
-const style=element('style');style.textContent='#sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}#sicorp-cloud button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--selected);color:var(--accent)}#sicorp-cloud-status{flex:1;font-size:12px;color:var(--muted)}#sicorp-cloud-login{width:min(92vw,420px);padding:22px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--text)}#sicorp-cloud-login input{width:100%;margin:14px 0;min-height:48px}#sicorp-cloud-login::backdrop{background:#071324e8}#sicorp-cloud-login h2{margin:0 0 12px}#sicorp-cloud-login button{min-height:46px;margin-top:8px}#sicorp-cloud-login p{font-size:13px;color:var(--muted);white-space:pre-wrap}';
+const style=element('style');style.textContent='#sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}#sicorp-cloud button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--selected);color:var(--accent)}#sicorp-cloud-status{flex:1;font-size:12px;color:var(--muted)}#sicorp-cloud-login{width:min(92vw,420px);padding:22px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--text)}#sicorp-cloud-login input{width:100%;margin:14px 0;min-height:48px}#sicorp-cloud-login::backdrop{background:#071324e8}#sicorp-cloud-login [hidden],#sicorp-cloud [hidden]{display:none!important}#sicorp-cloud-login h2{margin:0 0 12px}#sicorp-cloud-login button{min-height:46px;margin-top:8px}#sicorp-cloud-login p{font-size:13px;color:var(--muted);white-space:pre-wrap}';
 document.head.append(style);
 const bar=element('div');bar.id='sicorp-cloud';const badge=element('span');badge.id='sicorp-cloud-status';const syncButton=element('button','Conectar nube'),logoutButton=element('button','Cerrar sesión');syncButton.type=logoutButton.type='button';logoutButton.hidden=true;bar.append(badge,syncButton,logoutButton);document.querySelector('header').append(bar);
 const login=element('dialog');login.id='sicorp-cloud-login';
@@ -66,7 +66,7 @@ function endSession(automatic){
  if(!native&&!automatic&&pending&&!confirm('Hay cambios sin confirmar en la nube. ¿Cerrar sesión de todas formas?'))return;
  const old=session;session=null;epoch++;busy=false;clearTimeout(timer);clearTimeout(expiry);
  if(!native){if($('modal').open)$('modal').close();records={};last={};meta={base:null,pending:null};conflict=false;$('restoretext').value='';render();showLogin();}
- syncButton.textContent='Conectar nube';logoutButton.hidden=true;status(pending&&!native?'Sesión cerrada; verifica cambios pendientes.':'Sin conexión a la nube');
+ evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Conectar nube';logoutButton.hidden=true;status(pending&&!native?'Sesión cerrada; verifica cambios pendientes.':'Sin conexión a la nube');
  if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});
 }
 window.addEventListener('beforeunload',e=>{if(!native&&session&&dirty()){e.preventDefault();e.returnValue='';}});
@@ -127,6 +127,40 @@ async function sync(){
  }catch(err){if(e===epoch){if(err.code===401){endSession(true);showLogin();msg.textContent='Sesión vencida. Ingresa tu clave.';}else status('Sin confirmar · '+(err.message||'Reintentar'));}}
  finally{if(e===epoch)busy=false;}
 }
+
+// Shared private evidence panel (file chooser is native on Android).
+const evidence=element('section');evidence.className='card';evidence.hidden=true;
+const eh=element('h2','Evidencias privadas'),desc=element('p','Fotografías y PDF · máximo 10 MB por archivo');desc.className='muted';
+const file=element('input'),upload=element('button','Subir evidencia'),refreshFiles=element('button','Actualizar archivos'),fileList=element('div');
+file.type='file';file.accept='image/jpeg,image/png,image/webp,application/pdf';file.hidden=native;upload.type=refreshFiles.type='button';upload.className='full primary';refreshFiles.className='full';evidence.append(eh,desc,file,upload,refreshFiles,fileList);$('history').append(evidence);
+const validMime=['image/jpeg','image/png','image/webp','application/pdf'];
+function safeName(name){return String(name).replace(/[^a-zA-Z0-9_.-]/g,'_').slice(-100)||'archivo';}
+function validKey(name){return /^[a-f0-9-]{36}-[a-zA-Z0-9_.-]{1,100}$/.test(name);}
+function evidenceStatus(s){status(s);notify(s);}
+async function listFiles(){
+ if(!session)return;const e=epoch;
+ try{
+  const rows=await request('/storage/v1/object/list/sicorp-evidence','POST',{prefix:session.user.id,limit:100,offset:0,sortBy:{column:'created_at',order:'desc'}});
+  if(e!==epoch||!session)return;fileList.replaceChildren();
+  for(const x of rows){if(!x.id||!validKey(x.name))continue;const b=element('button',x.name.slice(37));b.type='button';b.className='historybtn';b.onclick=()=>downloadEvidence(x.name,x.metadata?.mimetype);fileList.append(b);}
+  if(!fileList.children.length)fileList.append(element('p','Sin evidencias.'));
+ }catch(e){fileList.textContent='No se pudieron consultar las evidencias.';}
+}
+async function downloadEvidence(name,mime){
+ if(!session||!validKey(name))return;
+ if(native){Native.cloudEvidenceDownload(session.user.id,session.access_token,name,validMime.includes(mime)?mime:'application/octet-stream');return;}
+ const e=epoch;try{const r=await fetch(cfg.url+'/storage/v1/object/authenticated/sicorp-evidence/'+session.user.id+'/'+encodeURIComponent(name),{headers:{apikey:cfg.publishableKey,Authorization:'Bearer '+session.access_token},cache:'no-store',credentials:'omit'});if(!r.ok)throw Error();const blob=await r.blob();if(e!==epoch||!session)return;const link=element('a'),url=URL.createObjectURL(blob);link.href=url;link.download=name.slice(37);link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{if(e===epoch)evidenceStatus('No se pudo descargar la evidencia.');}
+}
+upload.onclick=async()=>{
+ if(!session)return;
+ if(native){Native.cloudEvidenceUpload(session.user.id,session.access_token);return;}
+ const f=file.files[0];if(!f)return;if(!validMime.includes(f.type)||f.size>10485760){evidenceStatus('Formato inválido o mayor a 10 MB.');return;}
+ const e=epoch;upload.disabled=true;
+ try{const name=uuid()+'-'+safeName(f.name);const r=await fetch(cfg.url+'/storage/v1/object/sicorp-evidence/'+session.user.id+'/'+encodeURIComponent(name),{method:'POST',headers:{apikey:cfg.publishableKey,Authorization:'Bearer '+session.access_token,'Content-Type':f.type,'x-upsert':'false'},body:f,credentials:'omit',cache:'no-store'});if(!r.ok)throw Error();if(e===epoch&&session){file.value='';evidenceStatus('Evidencia guardada');await listFiles();}}catch{if(e===epoch)evidenceStatus('No se confirmó la subida.');}finally{upload.disabled=false;}
+};
+refreshFiles.onclick=listFiles;
+window.sicorpEvidenceResult=(ok,message)=>{if(session){evidenceStatus(message);if(ok)listFiles();}};
+
 const originalPersist=persist;
 persist=function(){
  if(!native&&!session){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
@@ -140,7 +174,7 @@ form.onsubmit=async ev=>{
   const s=await request('/auth/v1/token?grant_type=password','POST',{email:cfg.ownerEmail,password:secret},'');
   if(!s?.access_token||s.user?.app_metadata?.sicorp_admin!==true)throw Error('Cuenta no autorizada');
   session=s;epoch++;resetIdle();clearTimeout(expiry);expiry=setTimeout(()=>{endSession(true);if(!native)showLogin();},Math.max(1000,(s.expires_in||3600)*1000-10000));
-  login.close();syncButton.textContent='Sincronizar';logoutButton.hidden=false;await sync();
+  login.close();syncButton.textContent='Sincronizar';logoutButton.hidden=false;evidence.hidden=false;await sync();listFiles();
  }catch(e){msg.textContent='No se pudo acceder. Comprueba tu clave y conexión.';}finally{enter.disabled=false;}
 };
 syncButton.onclick=()=>session?sync():showLogin();logoutButton.onclick=()=>endSession(false);

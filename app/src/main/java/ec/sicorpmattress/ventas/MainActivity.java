@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
  private static final String CLOUD_URL="https://jooxurfzxumbyjdcmzjs.supabase.co";
  private static final String CLOUD_KEY="sb_publishable_ZYRZ5ji-puffBS1P46VlWA_Z8pEstps";
  private boolean allowedCloud(String path,String method){
-  return ("POST".equals(method)&&("/auth/v1/token?grant_type=password".equals(path)||"/auth/v1/logout?scope=local".equals(path)||"/rest/v1/rpc/sicorp_sync_commit".equals(path)))||("GET".equals(method)&&"/rest/v1/sicorp_history?select=revision,records".equals(path));
+  return ("POST".equals(method)&&("/auth/v1/token?grant_type=password".equals(path)||"/auth/v1/logout?scope=local".equals(path)||"/rest/v1/rpc/sicorp_sync_commit".equals(path)||"/storage/v1/object/list/sicorp-evidence".equals(path)))||("GET".equals(method)&&"/rest/v1/sicorp_history?select=revision,records".equals(path));
  }
  private void respondCloud(String id,int code,String body){runOnUiThread(()->{if(web!=null&&!isDestroyed()&&!isFinishing())web.evaluateJavascript("window.sicorpCloudReceive&&window.sicorpCloudReceive("+org.json.JSONObject.quote(id)+","+code+","+org.json.JSONObject.quote(body)+")",null);});}
  private void performCloud(String id,String path,String method,String token,String body){
@@ -48,7 +48,57 @@ public class MainActivity extends Activity {
    respondCloud(id,status,response);
   }catch(Exception e){respondCloud(id,503,"");}finally{if(connection!=null)connection.disconnect();}
  }
+ private static final int PICK_EVIDENCE=3701,SAVE_EVIDENCE=3702;
+ private String evidenceOwner,evidenceToken,evidenceName,evidenceMime;
+ private boolean evidenceBusy=false;
+ private boolean validEvidenceAuth(String owner,String token){return owner!=null&&owner.matches("[a-fA-F0-9-]{36}")&&token!=null&&!token.isEmpty()&&token.length()<16000;}
+ private boolean validEvidenceName(String name){return name!=null&&name.matches("[a-f0-9-]{36}-[a-zA-Z0-9_.-]{1,100}");}
+ private boolean validEvidenceMime(String mime){return "image/jpeg".equals(mime)||"image/png".equals(mime)||"image/webp".equals(mime)||"application/pdf".equals(mime);}
+ private void evidenceResult(boolean ok,String message){runOnUiThread(()->{evidenceBusy=false;if(web!=null&&!isDestroyed()&&!isFinishing())web.evaluateJavascript("window.sicorpEvidenceResult&&window.sicorpEvidenceResult("+ok+","+org.json.JSONObject.quote(message)+")",null);});}
+ private void chooseEvidence(String owner,String token,String name,String mime){
+  runOnUiThread(()->{if(evidenceBusy||!validEvidenceAuth(owner,token))return;try{
+   evidenceOwner=owner;evidenceToken=token;evidenceName=name;evidenceMime=mime;evidenceBusy=true;
+   Intent intent;
+   if(name==null){intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"image/jpeg","image/png","image/webp","application/pdf"});}
+   else{if(!validEvidenceName(name))throw new IllegalArgumentException();intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType(validEvidenceMime(mime)?mime:"application/octet-stream").putExtra(Intent.EXTRA_TITLE,name.substring(37));}
+   intent.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(intent,name==null?PICK_EVIDENCE:SAVE_EVIDENCE);
+  }catch(Exception e){evidenceToken=null;evidenceOwner=null;evidenceName=null;evidenceMime=null;evidenceResult(false,"No se pudo abrir el selector de archivos.");}});
+ }
+ @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){
+  super.onActivityResult(requestCode,resultCode,data);
+  if(requestCode!=PICK_EVIDENCE&&requestCode!=SAVE_EVIDENCE)return;
+  final String owner=evidenceOwner,token=evidenceToken,name=evidenceName,mime=evidenceMime;
+  evidenceOwner=null;evidenceToken=null;evidenceName=null;evidenceMime=null;
+  if(resultCode!=RESULT_OK||data==null||data.getData()==null){evidenceBusy=false;return;}
+  Uri uri=data.getData();
+  if(!validEvidenceAuth(owner,token)){evidenceResult(false,"Sesión no disponible.");return;}
+  try{cloudExecutor.execute(()->transferEvidence(requestCode,uri,owner,token,name,mime));}catch(java.util.concurrent.RejectedExecutionException e){evidenceResult(false,"Operación cancelada.");}
+ }
+ private void transferEvidence(int request,Uri uri,String owner,String token,String name,String mime){
+  java.net.HttpURLConnection c=null;
+  try{
+   byte[] bytes=null;
+   if(request==PICK_EVIDENCE){
+    mime=getContentResolver().getType(uri);if(!validEvidenceMime(mime))throw new IOException("Formato no permitido");
+    String filename="evidencia";try(android.database.Cursor cursor=getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.DISPLAY_NAME},null,null,null)){if(cursor!=null&&cursor.moveToFirst())filename=cursor.getString(0);}
+    if(filename==null)filename="evidencia";
+    filename=filename.replaceAll("[^a-zA-Z0-9_.-]","_");if(filename.length()>100)filename=filename.substring(filename.length()-100);if(filename.isEmpty())filename="evidencia";
+    name=java.util.UUID.randomUUID().toString()+"-"+filename;
+    try(InputStream in=getContentResolver().openInputStream(uri);ByteArrayOutputStream out=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>10485760)throw new IOException("Archivo mayor a 10 MB");out.write(buf,0,n);}bytes=out.toByteArray();}
+   }
+   if(!validEvidenceName(name))throw new IOException("Nombre inválido");
+   String path="/storage/v1/object/"+(request==SAVE_EVIDENCE?"authenticated/":"")+"sicorp-evidence/"+owner+"/"+name;
+   c=(java.net.HttpURLConnection)new java.net.URL(CLOUD_URL+path).openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(15000);c.setReadTimeout(45000);c.setRequestProperty("apikey",CLOUD_KEY);c.setRequestProperty("Authorization","Bearer "+token);
+   if(request==PICK_EVIDENCE){c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type",mime);c.setRequestProperty("x-upsert","false");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
+   int code=c.getResponseCode();if(code<200||code>=300)throw new IOException("HTTP "+code);
+   if(request==SAVE_EVIDENCE){try(InputStream in=c.getInputStream();OutputStream out=getContentResolver().openOutputStream(uri,"w")){if(out==null)throw new IOException();byte[] buf=new byte[8192];int n,total=0;while((n=in.read(buf))!=-1){total+=n;if(total>10485760)throw new IOException("Archivo demasiado grande");out.write(buf,0,n);}}}
+   evidenceResult(true,request==PICK_EVIDENCE?"Evidencia guardada":"Evidencia descargada");
+  }catch(Exception e){evidenceResult(false,"No se pudo completar la evidencia. Revisa formato, tamaño y conexión.");}finally{if(c!=null)c.disconnect();}
+ }
  public class Bridge {
+ @JavascriptInterface public void cloudEvidenceUpload(String owner,String token){chooseEvidence(owner,token,null,null);}
+ @JavascriptInterface public void cloudEvidenceDownload(String owner,String token,String name,String mime){chooseEvidence(owner,token,name,mime);}
+
  @JavascriptInterface public String cloudMeta(){return getSharedPreferences("sales",MODE_PRIVATE).getString("cloud_meta","{}");}
  @JavascriptInterface public boolean cloudSave(String value,String meta){
   if(value==null||meta==null||value.length()>2200000||meta.length()>4600000)return false;
