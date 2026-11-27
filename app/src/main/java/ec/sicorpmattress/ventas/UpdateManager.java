@@ -39,7 +39,7 @@ final class UpdateManager {
         } catch(Exception ignored){}
     }
     private File apk(){return new File(a.getCacheDir(),"sicorp-update.apk");}
-    private File partial(){return new File(a.getCacheDir(),"sicorp-update.part");}
+    private File partial(){return new File(a.getCacheDir(),"sicorp-update.part.apk");}
     private void cleanup(){apk().delete();partial().delete();prefs.edit().remove("download_code").apply();}
     private void ui(Runnable r){a.runOnUiThread(()->{if(!closed&&!a.isFinishing()&&!a.isDestroyed())r.run();});}
     private int installedCode() throws Exception {return a.getPackageManager().getPackageInfo(a.getPackageName(),0).versionCode;}
@@ -246,7 +246,7 @@ final class UpdateManager {
         int flag=Build.VERSION.SDK_INT>=28?PackageManager.GET_SIGNING_CERTIFICATES:PackageManager.GET_SIGNATURES;
         PackageInfo p=a.getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(),flag);
         if(p==null||!a.getPackageName().equals(p.packageName)||p.versionCode<=installedCode()||(version!=null&&!version.equals(p.versionName)))throw new IOException("La APK no corresponde a una versión más reciente de Sicorp Ventas.");
-        Signature[] sig=Build.VERSION.SDK_INT>=28?p.signingInfo.getApkContentsSigners():p.signatures;
+        android.content.pm.Signature[] sig=Build.VERSION.SDK_INT>=28?p.signingInfo.getApkContentsSigners():p.signatures;
         if(sig==null||sig.length!=1||!CERT.equals(hex(MessageDigest.getInstance("SHA-256").digest(sig[0].toByteArray()))))throw new IOException("Firma digital incorrecta. Instalación bloqueada.");
         return p.versionCode;
     }
