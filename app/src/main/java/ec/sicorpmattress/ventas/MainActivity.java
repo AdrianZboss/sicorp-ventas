@@ -36,5 +36,6 @@ public class MainActivity extends Activity {
  }
  @Override public void onBackPressed(){web.evaluateJavascript("(function(){var m=document.getElementById('modal');if(m.open){m.close();return true;}if(activePage!=='catalog'){page('catalog');return true;}return false;})()",v->{if(!"true".equals(v))super.onBackPressed();});}
  @Override protected void onResume(){super.onResume();if(updater!=null)updater.resume();}
+ @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
  @Override protected void onDestroy(){if(updater!=null)updater.close();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
 }
