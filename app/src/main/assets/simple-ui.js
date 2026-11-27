@@ -351,3 +351,55 @@
  };
  modal.addEventListener('close',()=>{pending=[];controls=[];saving=false;});
 })();
+
+
+/* SICORP 2.1.1 — WhatsApp report formats C and D. Same generator for preview, copy and share. */
+(function(){
+ 'use strict';
+ if(typeof report!=='function'||typeof renderReport!=='function')return;
+ function text(s){return String(s||'').replace(/\s+/g,' ').trim();}
+ function dimensions(v){
+  const d=text(v.dim);
+  return /^\d+(?:[.,]\d+)?\s*[×xX]\s*\d+(?:[.,]\d+)?(?:\s*cm)?$/i.test(d)
+    ?d.replace(/\s*cm$/i,'').replace(/\s*[×xX]\s*/g,'x'):d;
+ }
+ function displayName(p,v){
+  const dim=dimensions(v),size=text(v.size),name=text(p.name);
+  let measure=dim||size;
+  // Distinguish real variants when size or base height identifies a different reference.
+  if(dim&&size&&p.cat!=='Almohadas'&&p.cat!=='Sets de almohadas'&&!/^(únic[ao]|standard)$/i.test(size)&&size!==dim)measure=size+' '+dim;
+  if(p.cat==='Bases'&&v.height)measure=[measure,text(v.height)+' de alto'].filter(Boolean).join(' · ');
+  const brand=p.brand==='DECONOVA'&&!/deconova/i.test(name)?'Deconova ':'';
+  return brand+name+(measure?' '+measure:'');
+ }
+ const originalReport=report;
+ report=function(rows,mode=reportMode){
+  const items=rows.map(x=>({x,p:get(x),v:vget(x)}));
+  if(items.some(r=>!r.p||!r.v))return originalReport(rows,mode);
+  const lines=['*DE PRATI ROTONDA*'];
+  if(mode==='detailed'){
+   const date=/^\d{4}-\d{2}-\d{2}$/.test(day)?day.split('-').reverse().join('/'):fmtDay(day);
+   lines.push('Ventas | '+date);
+  }
+  lines.push('');
+  if(!items.length){lines.push('_Sin ventas registradas._');return lines.join('\n');}
+  if(mode==='detailed'){
+   const categoryOrder=[...new Set([...cats,...items.map(r=>r.p.cat)])];
+   let first=true;
+   for(const category of categoryOrder){
+    const group=items.filter(r=>r.p.cat===category);
+    if(!group.length)continue;
+    if(!first)lines.push('');
+    first=false;
+    lines.push('*'+category+'*',...group.map(({x,p,v})=>'- '+x.q+' '+displayName(p,v)));
+   }
+  }else lines.push(...items.map(({x,p,v})=>displayName(p,v)+' #'+x.q));
+  const units=total(rows);
+  lines.push('', '*Total: '+units+' '+(units===1?'unidad':'unidades')+'.*');
+  return lines.join('\n');
+ };
+ reportMode='compact';
+ const detailed=document.querySelector('[data-reportmode="detailed"]');
+ if(detailed)detailed.textContent='Largo';
+ renderReport(list());
+})();

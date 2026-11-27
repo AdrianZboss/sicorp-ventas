@@ -32,6 +32,28 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await f.getByText('☁ Sincronizado',{exact:true}).waitFor();
   const inner=page.frames().find(x=>x.url().includes('/app/src/main/assets/index.html'));
   assert.ok(inner);
+  const formats=await inner.evaluate(()=>{
+   const oldDay=day;day='2026-11-26';
+   const rows=[{id:'34',v:0,q:4},{id:'30',v:0,q:2}];
+   const compact=report(rows,'compact'),long=report(rows,'detailed'),empty=report([],'compact');
+   const mixed=report([{id:'8',v:0,q:1},{id:'8',v:1,q:2},{id:'37',v:0,q:1}],'detailed');
+   const previous=records[day];records[day]=rows;
+   page('sales');render();
+   const preview=document.getElementById('report').textContent;
+   const copyOriginal=copy;let copied='';copy=value=>{copied=value;};
+   document.getElementById('copy').click();copy=copyOriginal;
+   if(previous===undefined)delete records[day];else records[day]=previous;
+   day=oldDay;page('catalog');render();
+   return {compact,long,empty,mixed,preview,copied,mode:reportMode};
+  });
+  assert.equal(formats.compact,'*DE PRATI ROTONDA*\n\nHotel Collection Soft 70x50 #4\nHotel Collection Firm 70x50 #2\n\n*Total: 6 unidades.*');
+  assert.equal(formats.long,'*DE PRATI ROTONDA*\nVentas | 26/11/2026\n\n*Almohadas*\n- 4 Hotel Collection Soft 70x50\n- 2 Hotel Collection Firm 70x50\n\n*Total: 6 unidades.*');
+  assert.equal(formats.mode,'compact');
+  assert.equal(formats.copied,formats.compact);
+  assert.ok(formats.preview.includes('Hotel Collection Soft 70x50 #4'));
+  assert.ok(formats.empty.includes('Sin ventas registradas'));
+  assert.ok(formats.mixed.includes('29 cm de alto')&&formats.mixed.includes('35 cm de alto')&&formats.mixed.includes('Deconova Firme Básica'));
+
   const selected=await inner.evaluate(()=>{const p=catalog.find(p=>p.variants.length>=2);open(p);return {id:p.id,day};});
   const grid=await f.locator('#sicorp-batch').evaluate(n=>getComputedStyle(n).gridTemplateColumns);
   assert.notEqual(grid,'none');
