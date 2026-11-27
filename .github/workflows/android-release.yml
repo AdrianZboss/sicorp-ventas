@@ -1,0 +1,103 @@
+name: Publicar APK firmada (privada)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/build.gradle'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sicorp-release-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.SICORP_AUTO_RELEASE == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
+      - name: Compilar APK
+        run: gradle --no-daemon :app:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign-and-publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-release
+      - name: Android SDK
+        run: sdkmanager "build-tools;35.0.0"
+      - name: Verificar paquete y firmar
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.SICORP_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SICORP_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$KEYSTORE_PASSWORD" ]]; then
+            echo "::error::Faltan los secretos de firma SICORP."
+            exit 1
+          fi
+          umask 077
+          key="$(mktemp "$RUNNER_TEMP/sicorp-key.XXXXXXXX")"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$key"
+          unset KEYSTORE_B64
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/zipalign" -f 4 app-release-unsigned.apk aligned.apk
+          "$tools/apksigner" sign --ks "$key" --ks-type PKCS12 --ks-key-alias sicorp-ventas --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out Sicorp_Ventas.apk aligned.apk
+          unset KEYSTORE_PASSWORD
+          "$tools/apksigner" verify --verbose --print-certs Sicorp_Ventas.apk > signature.txt
+          grep -Fx 'Signer #1 certificate SHA-256 digest: f078c96b8c4cac3dbca6e589c9dba3beb04871959b957ded06830e69430e655c' signature.txt
+          "$tools/aapt" dump badging Sicorp_Ventas.apk > badging.txt
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          first = Path('badging.txt').read_text().splitlines()[0]
+          match = re.match(r"package: name='ec\.sicorpmattress\.ventas' versionCode='([0-9]+)' versionName='([0-9]+(?:\.[0-9]+){1,2})'", first)
+          if not match:
+              raise SystemExit('Paquete o version no valida')
+          code, version = match.groups()
+          if int(code) < 7:
+              raise SystemExit('Version anterior a 1.4')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'APP_VERSION={version}\nAPP_CODE={code}\n')
+          PY
+          sha256sum Sicorp_Ventas.apk > SHA256SUMS.txt
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v$APP_VERSION"
+          gh release create "$tag" Sicorp_Ventas.apk SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Sicorp Ventas $APP_VERSION" --notes "APK firmada. VersionCode: $APP_CODE. Instalar como actualizacion sin desinstalar la aplicacion." --latest
