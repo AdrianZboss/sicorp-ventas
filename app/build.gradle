@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
     namespace 'ec.sicorpmattress.ventas'
     compileSdk 35
-    defaultConfig { applicationId 'ec.sicorpmattress.ventas'; minSdk 26; targetSdk 34; versionCode 24; versionName '2.1.3' }
+    defaultConfig { applicationId 'ec.sicorpmattress.ventas'; minSdk 26; targetSdk 34; versionCode 25; versionName '2.1.4' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 

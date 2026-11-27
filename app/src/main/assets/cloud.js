@@ -191,6 +191,19 @@ const security=element('label','Bloqueo automático: '),idleSelect=element('sele
 security.id='sicorp-idle-settings';security.hidden=true;idleSelect.setAttribute('aria-label','Minutos de inactividad');
 for(const n of idleOptions){const option=element('option',n===60?'1 hora':n+' min');option.value=String(n);idleSelect.append(option);}
 idleSelect.value=String(idleMinutes);security.append(idleSelect);bar.append(security);
+let showIdleCounter=true;
+try{showIdleCounter=localStorage.getItem('sicorp.idle.counter')!=='off';}catch{}
+const idleChip=element('span'),idleChipText=element('span','Bloqueo en'),idleChipValue=element('span','05:00');
+idleChip.id='sicorp-idle-chip';idleChip.hidden=true;idleChip.setAttribute('role','timer');idleChip.setAttribute('aria-label','Tiempo restante para el bloqueo automático');
+idleChipValue.id='sicorp-idle-remaining';idleChip.append(idleChipText,idleChipValue);bar.prepend(idleChip);
+const idlePreference=element('label','Mostrar contador de sesión'),idlePreferenceInput=element('input');
+idlePreference.id='sicorp-idle-preference';idlePreferenceInput.type='checkbox';idlePreferenceInput.checked=showIdleCounter;idlePreference.prepend(idlePreferenceInput);idlePreference.hidden=true;bar.append(idlePreference);
+function paintIdle(left){
+ const seconds=Math.max(0,Math.ceil(left/1000)),mm=String(Math.floor(seconds/60)).padStart(2,'0'),ss=String(seconds%60).padStart(2,'0');
+ idleChipValue.textContent=mm+':'+ss;idleChip.classList.toggle('expiring',seconds<=30);idleChip.hidden=!unlocked||locking||!showIdleCounter||document.hidden;
+}
+idlePreferenceInput.onchange=()=>{showIdleCounter=idlePreferenceInput.checked;try{localStorage.setItem('sicorp.idle.counter',showIdleCounter?'on':'off');}catch{}checkIdle();};
+const counterStyle=element('style');counterStyle.textContent='#sicorp-idle-chip{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 10px;border-radius:99px;background:var(--soft);border:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:650;white-space:nowrap}#sicorp-idle-remaining{color:var(--accent);font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}#sicorp-idle-chip.expiring{border-color:#b7791f}#sicorp-idle-chip.expiring #sicorp-idle-remaining{color:var(--text)}#sicorp-idle-preference{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}#sicorp-idle-preference input{width:16px;height:16px;min-height:0;accent-color:var(--accent);margin:0}#sicorp-idle-chip[hidden],#sicorp-idle-preference[hidden]{display:none!important}';document.head.append(counterStyle);
 const idleDialog=element('dialog'),idleTitle=element('h2','Tu sesión está por bloquearse'),idleCount=element('p','00:30'),idleHelp=element('p','Tus ventas guardadas y la selección pendiente se conservarán. Vuelve a ingresar tu clave para acceder.'),keep=element('button','Mantener sesión activa'),lockNow=element('button','Bloquear ahora');
 idleDialog.id='sicorp-idle-warning';idleTitle.id='sicorp-idle-title';idleDialog.setAttribute('aria-labelledby',idleTitle.id);idleCount.id='sicorp-idle-count';keep.type=lockNow.type='button';keep.className='full primary';lockNow.className='full';idleDialog.append(idleTitle,idleCount,idleHelp,keep,lockNow);document.body.append(idleDialog);
 const idleStyle=element('style');idleStyle.textContent='#sicorp-idle-settings{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}#sicorp-idle-settings[hidden]{display:none!important}#sicorp-idle-settings select{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px}#sicorp-idle-warning{width:min(360px,calc(100vw - 36px));box-sizing:border-box;background:var(--surface);color:var(--text);text-align:center}#sicorp-idle-warning::backdrop{background:#0009}#sicorp-idle-count{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;margin:12px 0}#sicorp-idle-warning button{margin-top:8px}';document.head.append(idleStyle);
@@ -199,18 +212,20 @@ const privacyStyle=element('style');privacyStyle.textContent='#sicorp-idle-priva
 function coverIdle(){if(!privacy.open)privacy.showModal();}
 function uncoverIdle(){if(privacy.open)privacy.close();}
 function hideIdle(){if(idleDialog.open)idleDialog.close();}
-function stopIdle(){clearTimeout(timer);idleDeadline=0;hideIdle();uncoverIdle();}
+function stopIdle(){clearTimeout(timer);idleDeadline=0;idleChip.hidden=true;idlePreference.hidden=true;hideIdle();uncoverIdle();}
 function checkIdle(){
  clearTimeout(timer);
  if(!unlocked||locking||!idleDeadline)return;
  const left=idleDeadline-idleNow();
- if(left<=0){coverIdle();endSession(true);return;}
+ if(left<=0){idleChip.hidden=true;coverIdle();endSession(true);return;}
+ paintIdle(left);
  if(document.hidden){coverIdle();}else{uncoverIdle();}
  if(left<=30000&&!document.hidden){
   idleCount.textContent='00:'+String(Math.ceil(left/1000)).padStart(2,'0');
   if(!idleDialog.open)idleDialog.showModal();
  }
- timer=setTimeout(checkIdle,left>30000?left-30000:Math.min(1000,left));
+ const next=(!document.hidden&&showIdleCounter)?Math.min(1000,left):left>30000?left-30000:Math.min(1000,left);
+ timer=setTimeout(checkIdle,next);
 }
 function resetIdle(){
  if(!unlocked||locking)return;
@@ -389,7 +404,7 @@ form.onsubmit=async ev=>{
   if(!save()||!queueVault())throw Error('No se pudo guardar la copia de la cuenta.');
   await flushVault();
   if(!native&&existing.store&&existing.store!==mode)clearVault(existing.store);
-  login.close();security.hidden=false;resetIdle();render();if(restoreDraft)window.sicorpRestoreDraft?.(restoreDraft);syncButton.textContent='Sincronizar';logoutButton.textContent='Bloquear sesión';logoutButton.hidden=false;evidence.hidden=!session;
+  login.close();security.hidden=false;idlePreference.hidden=false;resetIdle();render();if(restoreDraft)window.sicorpRestoreDraft?.(restoreDraft);syncButton.textContent='Sincronizar';logoutButton.textContent='Bloquear sesión';logoutButton.hidden=false;evidence.hidden=!session;
   status(session?'Cuenta conectada · sincronizando…':'Sin conexión · datos locales protegidos');
   sync();if(session)listFiles();
  }catch(e){
