@@ -1,7 +1,7 @@
 name: Verificar SICORP Cloud
 on:
   push:
-    branches: [sicorp-web-cloud, sicorp-offline-test]
+    branches: [sicorp-web-cloud, sicorp-offline-test, sicorp-report-inspect]
     paths:
       - 'app/**'
       - 'web/**'
@@ -19,6 +19,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - name: Inspectar estructura de reportes
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          s=Path('app/src/main/assets/index.html').read_text()
+          s=re.sub(r'data:image/[^"\x27\s]+','[imagen]',s)
+          for pattern in [r'<[^>]*id=["\x27](report|store|copy|share)[^>]*>',r'function\s+(\w*report\w*|label|fmtDay|render|list|persist)\s*\(',r'\b(?:const|let|var)\s+\w*(?:report|store|tienda)\w*\s*=',r'\$\(["\x27](report|copy|share|store)["\x27]\)']:
+              for m in list(re.finditer(pattern,s,re.I))[:50]:
+                  print(m.group(0),s[max(0,m.start()-200):m.end()+1300])
+          PY
       - name: Verificar JavaScript
         run: |
           node --check app/src/main/assets/cloud.js
