@@ -184,6 +184,8 @@ function showLogin(){
 // Idle policy applies equally to Android and every browser storage mode.
 const idleOptions=[5,10,15,30,60];
 let idleMinutes=5,idleDeadline=0;
+// Android elapsedRealtime includes deep sleep; web uses an absolute wall-clock deadline.
+const idleNow=()=>native&&typeof Native.idleElapsedRealtime==='function'?Number(Native.idleElapsedRealtime()):Date.now();
 try{const n=Number(localStorage.getItem('sicorp.idle.minutes'));if(idleOptions.includes(n))idleMinutes=n;}catch{}
 const security=element('label','Bloqueo automático: '),idleSelect=element('select');
 security.id='sicorp-idle-settings';security.hidden=true;idleSelect.setAttribute('aria-label','Minutos de inactividad');
@@ -192,13 +194,18 @@ idleSelect.value=String(idleMinutes);security.append(idleSelect);bar.append(secu
 const idleDialog=element('dialog'),idleTitle=element('h2','Tu sesión está por bloquearse'),idleCount=element('p','00:30'),idleHelp=element('p','Tus ventas guardadas y la selección pendiente se conservarán. Vuelve a ingresar tu clave para acceder.'),keep=element('button','Mantener sesión activa'),lockNow=element('button','Bloquear ahora');
 idleDialog.id='sicorp-idle-warning';idleTitle.id='sicorp-idle-title';idleDialog.setAttribute('aria-labelledby',idleTitle.id);idleCount.id='sicorp-idle-count';keep.type=lockNow.type='button';keep.className='full primary';lockNow.className='full';idleDialog.append(idleTitle,idleCount,idleHelp,keep,lockNow);document.body.append(idleDialog);
 const idleStyle=element('style');idleStyle.textContent='#sicorp-idle-settings{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}#sicorp-idle-settings[hidden]{display:none!important}#sicorp-idle-settings select{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px}#sicorp-idle-warning{width:min(360px,calc(100vw - 36px));box-sizing:border-box;background:var(--surface);color:var(--text);text-align:center}#sicorp-idle-warning::backdrop{background:#0009}#sicorp-idle-count{font-size:36px;font-weight:800;font-variant-numeric:tabular-nums;margin:12px 0}#sicorp-idle-warning button{margin-top:8px}';document.head.append(idleStyle);
+const privacy=element('dialog'),privacyText=element('p','Verificando seguridad de la sesión…');privacy.id='sicorp-idle-privacy';privacy.append(privacyText);document.body.append(privacy);privacy.addEventListener('cancel',e=>e.preventDefault());
+const privacyStyle=element('style');privacyStyle.textContent='#sicorp-idle-privacy{background:var(--surface);color:var(--text);border:1px solid var(--line);text-align:center;width:min(350px,calc(100vw - 36px))}#sicorp-idle-privacy::backdrop{background:var(--canvas);opacity:1}';document.head.append(privacyStyle);
+function coverIdle(){if(!privacy.open)privacy.showModal();}
+function uncoverIdle(){if(privacy.open)privacy.close();}
 function hideIdle(){if(idleDialog.open)idleDialog.close();}
-function stopIdle(){clearTimeout(timer);idleDeadline=0;hideIdle();}
+function stopIdle(){clearTimeout(timer);idleDeadline=0;hideIdle();uncoverIdle();}
 function checkIdle(){
  clearTimeout(timer);
  if(!unlocked||locking||!idleDeadline)return;
- const left=idleDeadline-Date.now();
- if(left<=0){endSession(true);return;}
+ const left=idleDeadline-idleNow();
+ if(left<=0){coverIdle();endSession(true);return;}
+ if(document.hidden){coverIdle();}else{uncoverIdle();}
  if(left<=30000&&!document.hidden){
   idleCount.textContent='00:'+String(Math.ceil(left/1000)).padStart(2,'0');
   if(!idleDialog.open)idleDialog.showModal();
@@ -207,28 +214,33 @@ function checkIdle(){
 }
 function resetIdle(){
  if(!unlocked||locking)return;
- if(idleDeadline&&Date.now()>=idleDeadline){checkIdle();return;}
- idleDeadline=Date.now()+idleMinutes*60000;hideIdle();checkIdle();
+ if(idleDeadline&&idleNow()>=idleDeadline){checkIdle();return;}
+ idleDeadline=idleNow()+idleMinutes*60000;hideIdle();checkIdle();
 }
 function idleActivity(ev){
  if(!unlocked)return;
- if(locking||(idleDeadline&&Date.now()>=idleDeadline)){ev.preventDefault();ev.stopImmediatePropagation();checkIdle();return;}
- if(!idleDialog.open)resetIdle();
+ if(locking||(idleDeadline&&idleNow()>=idleDeadline)){ev.preventDefault();ev.stopImmediatePropagation();checkIdle();return;}
+ if(ev.isTrusted&&!document.hidden&&!privacy.open&&!idleDialog.open)resetIdle();
 }
-for(const ev of ['pointerdown','keydown','input','wheel'])document.addEventListener(ev,idleActivity,{capture:true,passive:false});
+for(const ev of ['pointerdown','pointermove','keydown','input','wheel','click'])document.addEventListener(ev,idleActivity,{capture:true,passive:false});
 idleDialog.addEventListener('cancel',e=>e.preventDefault());
 keep.onclick=resetIdle;lockNow.onclick=()=>endSession(true);
 idleSelect.onchange=()=>{if(!idleOptions.includes(Number(idleSelect.value)))return;idleMinutes=Number(idleSelect.value);try{localStorage.setItem('sicorp.idle.minutes',String(idleMinutes));}catch{}resetIdle();};
-document.addEventListener('visibilitychange',checkIdle);window.addEventListener('pageshow',checkIdle);window.sicorpCheckIdle=checkIdle;
+// A return/focus event only checks expiration: it must never reset the deadline.
+function returnCheck(){checkIdle();return true;}
+document.addEventListener('visibilitychange',returnCheck);document.addEventListener('freeze',()=>{if(unlocked)coverIdle();});document.addEventListener('resume',returnCheck);window.addEventListener('pageshow',returnCheck);window.addEventListener('focus',returnCheck);
+if(!native&&window.parent!==window){try{window.parent.addEventListener('focus',returnCheck);window.parent.addEventListener('pageshow',returnCheck);window.parent.document.addEventListener('visibilitychange',returnCheck);}catch{}}
+window.sicorpCheckIdle=returnCheck;
 async function endSession(automatic){
  if(!unlocked||locking)return;
  const draft=window.sicorpCaptureDraft?.()||null;
  const pending=dirty()&&(!meta.base||!empty(records)||meta.pending),old=session;
  if(!automatic&&pending&&!confirm('Hay cambios pendientes. Se conservarán en este dispositivo'+(!native&&vaultStore==='session'?' mientras esta pestaña siga abierta':'')+'. ¿Bloquear el acceso?'))return;
+ if(automatic)coverIdle();
  locking=true;logoutButton.disabled=true;keep.disabled=lockNow.disabled=true;const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
  savedDraft=draft;
  try{if(native&&!save())throw Error('Copia local no confirmada');if(!queueVault())throw Error('Copia local no confirmada');await flushVault();}
- catch{savedDraft=null;locking=false;logoutButton.disabled=false;keep.disabled=lockNow.disabled=false;idleDeadline=0;status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
+ catch{savedDraft=null;locking=false;logoutButton.disabled=false;keep.disabled=lockNow.disabled=false;if(automatic){coverIdle();privacyText.textContent='Protegiendo tus ventas. Reintentando el guardado local…';clearTimeout(timer);timer=setTimeout(()=>endSession(true),5000);}else{idleDeadline=0;status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();}return;}
  if(e!==epoch)return;
  const mode=vaultStore;
  if(!native&&mode==='session'&&!pending&&!draft){try{clearVault(mode);}catch{}if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});}
@@ -280,6 +292,7 @@ function adopt(remote){
 }
 async function sync(){
  if(!unlocked||locking||busy||conflict)return;
+ if(idleDeadline&&idleNow()>=idleDeadline){checkIdle();return;}
  if(!native&&navigator.onLine===false){status('Sin conexión · ventas guardadas localmente');return;}
  busy=true;const e=epoch;status('Sincronizando…');
  try{
@@ -347,7 +360,7 @@ refreshFiles.onclick=listFiles;
 window.sicorpEvidenceResult=(ok,message)=>{if(session){evidenceStatus(message);if(ok)listFiles();}};
 
 persist=function(){
- if(!unlocked||locking){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
+ if(!unlocked||locking||(idleDeadline&&idleNow()>=idleDeadline)){checkIdle();rollbackLocal();notify('Inicia sesión para guardar.');return false;}
  if(!save()){rollbackLocal();notify('No se pudo guardar el historial.');return false;}
  if(native){status('Guardado localmente · sincronización pendiente');setTimeout(sync,0);}
  else {status('Guardando copia local cifrada…');flushVault().then(()=>{if(unlocked){status('Copia local guardada · sincronización pendiente');sync();}}).catch(()=>notify('No se confirmó el guardado local. No cierres esta pestaña.'));}

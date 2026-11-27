@@ -83,7 +83,14 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await f.locator('#sicorp-idle-warning').waitFor({state:'visible'});
   await f.getByRole('button',{name:'Mantener sesión activa'}).click();
   await f.locator('#sicorp-idle-warning').waitFor({state:'hidden'});
-  await page.clock.fastForward(300001);
+  // A wall-clock jump without advancing the JS timer emulates a suspended tab.
+  // A focus return before expiry must keep the original deadline.
+  const start=await restored.evaluate(()=>Date.now());
+  await page.clock.setSystemTime(start+120000);
+  await restored.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  assert.equal(await login.isVisible(),false);
+  await page.clock.setSystemTime(start+300001);
+  await restored.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await login.waitFor({state:'visible'});
   assert.equal(await restored.evaluate(()=>Object.keys(records).length),0);
   await key.fill('0123456789');await login.getByRole('button',{name:'Iniciar sesión'}).click();

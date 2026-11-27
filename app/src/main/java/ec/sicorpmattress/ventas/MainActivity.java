@@ -4,8 +4,9 @@ public class MainActivity extends Activity {
  private WebView web; private UpdateManager updater; private static final String PAGE="file:///android_asset/index.html";
  @Override public void onCreate(Bundle state){super.onCreate(state);applyAppearance();updater=new UpdateManager(this);web=new WebView(this);web.setAlpha(0f);web.setBackgroundColor(appearance().equals("light")?0xfff5f6f8:0xff101418);setContentView(web);WebSettings s=web.getSettings();s.setUseWideViewPort(true);s.setLoadWithOverviewMode(false);s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setBlockNetworkLoads(true);web.addJavascriptInterface(new Bridge(),"Native");web.setWebChromeClient(new WebChromeClient());web.setWebViewClient(new WebViewClient(){@Override public void onPageFinished(WebView v,String url){if(!PAGE.equals(url))return;loadTheme(v);try(BufferedReader reader=new BufferedReader(new InputStreamReader(getAssets().open("simple-ui.js"),java.nio.charset.StandardCharsets.UTF_8))){StringBuilder script=new StringBuilder();String line;while((line=reader.readLine())!=null)script.append(line).append('\n');v.evaluateJavascript(script.toString(),null);}catch(IOException e){android.util.Log.e("SicorpVentas","No se pudo cargar interfaz simplificada",e);}loadCloud(v);v.evaluateJavascript("(function(){if(document.getElementById('sicorpUpdates'))return;var h=document.getElementById('history');var c=document.createElement('div');c.id='sicorpUpdates';c.className='card';var b=document.createElement('button');b.type='button';b.className='full primary';b.textContent='Actualizar app · '+Native.installedVersion();b.onclick=function(){Native.openUpdates();};c.appendChild(b);if(h)h.appendChild(c);else {c.style.cssText='position:fixed;right:12px;bottom:90px;z-index:99;padding:4px';document.body.appendChild(c);}})()",null);}@Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return !PAGE.equals(r.getUrl().toString());}@Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){if(PAGE.equals(r.getUrl().toString()))try{return new WebResourceResponse("text/html","UTF-8",getAssets().open("index.html"));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}if("data".equals(r.getUrl().getScheme()))return null;return new WebResourceResponse("text/plain","UTF-8",403,"Forbidden",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}});web.loadUrl(PAGE);}
 
- @Override protected void onResume(){super.onResume();if(web!=null)web.evaluateJavascript("window.sicorpCheckIdle&&window.sicorpCheckIdle()",null);}
- @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus&&web!=null)web.evaluateJavascript("window.sicorpCheckIdle&&window.sicorpCheckIdle()",null);}
+ private boolean foreground=false,cloudReady=false;
+ private void verifyIdleBeforeReveal(){if(web==null||!cloudReady||!foreground)return;web.setAlpha(0f);web.evaluateJavascript("typeof window.sicorpCheckIdle==='function' && window.sicorpCheckIdle()",result->{if(foreground&&cloudReady&&"true".equals(result)&&web!=null)web.setAlpha(1f);});}
+ @Override public void onWindowFocusChanged(boolean focus){super.onWindowFocusChanged(focus);if(focus)verifyIdleBeforeReveal();}
  private String appearance(){return "light".equals(getSharedPreferences("appearance",MODE_PRIVATE).getString("mode","dark"))?"light":"dark";}
  private void applyAppearance(){
    boolean light="light".equals(appearance());
@@ -27,7 +28,7 @@ public class MainActivity extends Activity {
  private void loadCloud(WebView v){
    try(InputStream input=getAssets().open("cloud.js"); ByteArrayOutputStream out=new ByteArrayOutputStream()){
      byte[] buf=new byte[8192]; int n; while((n=input.read(buf))!=-1)out.write(buf,0,n);
-     v.evaluateJavascript(new String(out.toByteArray(),java.nio.charset.StandardCharsets.UTF_8),ignored->v.evaluateJavascript("(function(){var l=document.getElementById('sicorp-cloud-login');return !!(l&&l.open);})()",result->{if("true".equals(result))v.setAlpha(1f);else cloudLoadError();}));
+     v.evaluateJavascript(new String(out.toByteArray(),java.nio.charset.StandardCharsets.UTF_8),ignored->v.evaluateJavascript("(function(){var l=document.getElementById('sicorp-cloud-login');return !!(l&&l.open);})()",result->{if("true".equals(result)){cloudReady=true;verifyIdleBeforeReveal();}else cloudLoadError();}));
    }catch(IOException e){android.util.Log.e("SicorpVentas","No se pudo cargar la nube",e);cloudLoadError();}
  }
  private void cloudLoadError(){runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())new android.app.AlertDialog.Builder(this).setTitle("SICORP Ventas").setMessage("No se pudo iniciar el acceso privado. Tus datos locales se conservan.").setCancelable(false).setPositiveButton("Reintentar",(d,w)->web.reload()).setNegativeButton("Salir",(d,w)->finish()).show();});}
@@ -144,6 +145,7 @@ public class MainActivity extends Activity {
  @JavascriptInterface public String getAppearance(){return appearance();}
  @JavascriptInterface public void setAppearance(String mode){if(!"light".equals(mode)&&!"dark".equals(mode))return;getSharedPreferences("appearance",MODE_PRIVATE).edit().putString("mode",mode).apply();runOnUiThread(()->applyAppearance());}
 
+ @JavascriptInterface public long idleElapsedRealtime(){return android.os.SystemClock.elapsedRealtime();}
  @JavascriptInterface public String installedVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(android.content.pm.PackageManager.NameNotFoundException e){return "Desconocida";}}
  @JavascriptInterface public void openUpdates(){runOnUiThread(()->updater.open());}
 
@@ -152,8 +154,8 @@ public class MainActivity extends Activity {
  @JavascriptInterface public void copy(String value){runOnUiThread(()->{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("Sicorp Ventas",value));});}
  @JavascriptInterface public void share(String value){runOnUiThread(()->{Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");intent.putExtra(Intent.EXTRA_TEXT,value);startActivity(Intent.createChooser(intent,"Compartir reporte"));});}
  }
- @Override public void onBackPressed(){web.evaluateJavascript("(function(){var l=document.getElementById('sicorp-cloud-login');if(l&&l.open)return true;var m=document.getElementById('modal');if(m.open){m.close();return true;}if(activePage!=='catalog'){page('catalog');return true;}return false;})()",v->{if(!"true".equals(v))super.onBackPressed();});}
- @Override protected void onResume(){super.onResume();if(updater!=null)updater.resume();}
- @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
+ @Override public void onBackPressed(){web.evaluateJavascript("(function(){var l=document.getElementById('sicorp-cloud-login');if(l&&l.open)return true;var warning=document.getElementById('sicorp-idle-warning'),privacy=document.getElementById('sicorp-idle-privacy');if((warning&&warning.open)||(privacy&&privacy.open))return true;var m=document.getElementById('modal');if(m.open){m.close();return true;}if(activePage!=='catalog'){page('catalog');return true;}return false;})()",v->{if(!"true".equals(v))super.onBackPressed();});}
+ @Override protected void onResume(){super.onResume();foreground=true;verifyIdleBeforeReveal();if(updater!=null)updater.resume();}
+ @Override protected void onPause(){foreground=false;if(web!=null)web.setAlpha(0f);if(updater!=null)updater.pause();super.onPause();}
  @Override protected void onDestroy(){if(updater!=null)updater.close();cloudExecutor.shutdownNow();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}
 }
