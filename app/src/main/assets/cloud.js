@@ -45,12 +45,60 @@ let meta={base:null,pending:null},session=null,epoch=0,busy=false,conflict=false
 try{if(native){const m=JSON.parse(Native.cloudMeta()||'{}');if(m.base&&Number.isSafeInteger(m.base.revision)){m.base.records=canonical(m.base.records);meta.base=m.base;}if(m.pending){m.pending.records=canonical(m.pending.records);meta.pending=m.pending;}}else records={};records=canonical(records);}catch(e){conflict=true;}
 let last=clone(records);
 const element=(tag,t)=>{const n=document.createElement(tag);if(t!==undefined)n.textContent=t;return n;};
-const style=element('style');style.textContent='#sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}#sicorp-cloud button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--selected);color:var(--accent)}#sicorp-cloud-status{flex:1;font-size:12px;color:var(--muted)}#sicorp-cloud-login{width:min(92vw,420px);padding:22px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--text)}#sicorp-cloud-login input{width:100%;margin:14px 0;min-height:48px}#sicorp-cloud-login::backdrop{background:#071324e8}#sicorp-cloud-login [hidden],#sicorp-cloud [hidden]{display:none!important}#sicorp-cloud-login h2{margin:0 0 12px}#sicorp-cloud-login button{min-height:46px;margin-top:8px}#sicorp-cloud-login p{font-size:13px;color:var(--muted);white-space:pre-wrap}';
+const style=element('style');style.textContent=`
+#sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+#sicorp-cloud button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--selected);color:var(--accent)}
+#sicorp-cloud-status{flex:1;font-size:12px;color:var(--muted)}
+#sicorp-cloud-login{
+ box-sizing:border-box;width:min(calc(100vw - 32px),420px);max-width:calc(100vw - 32px);
+ max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);margin:auto;padding:0;
+ border:1px solid #2e6572;border-radius:3px 24px 3px 24px;overflow:auto;
+ color:#e6fbff;background:#0b111b;color-scheme:dark;
+ box-shadow:0 0 0 4px #0a1826,0 0 0 5px #29404e,0 22px 80px #000b,0 0 36px #26e6e71c;
+}
+#sicorp-cloud-login::backdrop{
+ background:radial-gradient(ellipse at 20% 15%,#10313d 0%,transparent 54%),radial-gradient(ellipse at 90% 90%,#351b48 0%,transparent 58%),repeating-linear-gradient(0deg,transparent 0 31px,#1c35402b 31px 32px),repeating-linear-gradient(90deg,transparent 0 31px,#1c35402b 31px 32px),#070b12;
+}
+#sicorp-cloud-login form{display:grid;gap:14px;margin:0;padding:24px;position:relative;overflow:hidden;text-align:left}
+#sicorp-cloud-login form::before{content:"";position:absolute;top:0;left:0;width:45%;height:3px;background:linear-gradient(90deg,#45f7e3 0 76%,#ed67dc 76% 90%,transparent 90%)}
+#sicorp-cloud-login .cyber-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#sicorp-cloud-login .cyber-id{font:700 10px/1.4 ui-monospace,monospace;letter-spacing:1.7px;color:#7cbdc9}
+#sicorp-cloud-login .cyber-badge{display:flex;align-items:center;gap:7px;border:1px solid #32514f;padding:5px 7px;color:#9ce7d6;font:700 9px/1.2 ui-monospace,monospace;letter-spacing:.8px;white-space:nowrap}
+#sicorp-cloud-login .cyber-badge::before{content:"";width:6px;height:6px;background:#56f1cb;box-shadow:0 0 9px #56f1cb}
+#sicorp-cloud-login .cyber-brand{margin:5px 0 0;font:800 clamp(32px,8vw,46px)/.97 system-ui,sans-serif;letter-spacing:-2.5px;color:#f1fcff}
+#sicorp-cloud-login .cyber-brand span{display:block;color:#42e8db;font-size:.58em;letter-spacing:6px;line-height:1.5}
+#sicorp-cloud-login .cyber-rule{height:1px;background:linear-gradient(90deg,#44eadb,#2a3e52 65%,#d960bb)}
+#sicorp-cloud-login .cyber-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#a8c7d7;font:700 11px/1.4 ui-monospace,monospace;letter-spacing:1.5px}
+#sicorp-cloud-login input{box-sizing:border-box;width:100%;margin:0;min-height:62px;padding:10px 16px;background:#070d16;color:#e5fff9;border:1px solid #396678;border-radius:3px 12px 3px 12px;font:600 24px/1.2 ui-monospace,monospace;letter-spacing:5px;text-align:center;caret-color:#5bffe1;outline:none}
+#sicorp-cloud-login input::placeholder{color:#688291;font-size:12px;letter-spacing:2px;font-weight:500}
+#sicorp-cloud-login input:focus{border-color:#54f2de;box-shadow:0 0 0 2px #54f2de30,0 0 18px #54f2de13}
+#sicorp-cloud-login button{box-sizing:border-box;min-height:48px;margin:0}
+#sicorp-cloud-login button:focus-visible{outline:2px solid #f6b8ff;outline-offset:3px}
+#sicorp-cloud-login .cyber-keyboard{width:auto;min-height:30px;padding:4px 9px;border:1px solid #355468;background:#121e2c;color:#9aece2;border-radius:3px;font:700 11px/1 ui-monospace,monospace;letter-spacing:.5px}
+#sicorp-cloud-login .cyber-enter{width:100%;border:1px solid #6bffdf;border-radius:3px 12px 3px 12px;background:#4ef1d7;color:#071a20;font-size:14px;font-weight:850;letter-spacing:2px;box-shadow:0 0 20px #4ef1d726}
+#sicorp-cloud-login .cyber-enter:disabled{opacity:.55}
+#sicorp-cloud-login .cyber-local{width:100%;border:1px solid #394e60;background:#111b29;color:#9cb6c8;border-radius:3px 12px 3px 12px;font-size:12px}
+#sicorp-cloud-login .cyber-message{margin:0;min-height:18px;font-size:12px;line-height:1.4;color:#a5bccc;white-space:pre-wrap;overflow-wrap:anywhere}
+#sicorp-cloud-login .cyber-foot{display:flex;justify-content:space-between;gap:8px;margin-top:0;color:#6f9aaa;font:600 9px/1.4 ui-monospace,monospace;letter-spacing:1.2px}
+#sicorp-cloud-login .cyber-foot span:last-child{color:#e697d6}
+#sicorp-cloud-login [hidden],#sicorp-cloud [hidden]{display:none!important}
+@media(max-height:480px){#sicorp-cloud-login form{gap:9px;padding:16px 20px}#sicorp-cloud-login .cyber-brand{font-size:30px}#sicorp-cloud-login input{min-height:48px}}
+`;
 document.head.append(style);
 const bar=element('div');bar.id='sicorp-cloud';const badge=element('span');badge.id='sicorp-cloud-status';const syncButton=element('button','Conectar nube'),logoutButton=element('button','Cerrar sesión');syncButton.type=logoutButton.type='button';logoutButton.hidden=true;bar.append(badge,syncButton,logoutButton);document.querySelector('header').append(bar);
 const login=element('dialog');login.id='sicorp-cloud-login';
-const form=element('form'),title=element('h2','SICORP Ventas'),msg=element('p','Acceso privado con tu clave maestra.'),pass=element('input'),enter=element('button','Acceder'),local=element('button','Continuar sin conexión');
-pass.type='password';pass.required=true;pass.autocomplete='off';pass.placeholder='Clave maestra';pass.setAttribute('aria-label','Clave maestra');enter.type='submit';enter.className='full primary';local.type='button';local.className='full';local.hidden=!native;form.append(title,msg,pass,enter,local);login.append(form);document.body.append(login);
+const form=element('form'),title=element('h2','SICORP'),msg=element('p','Acceso privado con tu clave maestra.'),pass=element('input'),enter=element('button','ACCEDER  ›'),local=element('button','Continuar sin conexión');
+const top=element('div'),id=element('span','S // V · TERMINAL 01'),secure=element('span','PRIVADO'),brandLine=element('span','VENTAS'),rule=element('div'),labelRow=element('div'),label=element('label','CLAVE DE ACCESO'),keyboard=element('button','ABC'),foot=element('div');
+top.className='cyber-top';id.className='cyber-id';secure.className='cyber-badge';top.append(id,secure);
+title.className='cyber-brand';title.id='sicorp-login-title';title.append(brandLine);login.setAttribute('aria-labelledby',title.id);
+rule.className='cyber-rule';rule.setAttribute('aria-hidden','true');
+labelRow.className='cyber-label';label.htmlFor='sicorp-login-key';keyboard.type='button';keyboard.className='cyber-keyboard';keyboard.setAttribute('aria-label','Cambiar a teclado completo');labelRow.append(label,keyboard);
+pass.id='sicorp-login-key';pass.type='password';pass.inputMode='numeric';pass.setAttribute('enterkeyhint','go');pass.autocapitalize='off';pass.spellcheck=false;pass.required=true;pass.autocomplete='off';pass.placeholder='INTRODUCE TU CLAVE';pass.setAttribute('aria-label','Clave maestra');pass.setAttribute('aria-describedby','sicorp-login-message');
+keyboard.onclick=()=>{const numeric=pass.inputMode==='numeric';pass.inputMode=numeric?'text':'numeric';keyboard.textContent=numeric?'123':'ABC';keyboard.setAttribute('aria-label',numeric?'Cambiar a teclado numérico':'Cambiar a teclado completo');pass.focus();};
+msg.id='sicorp-login-message';msg.className='cyber-message';msg.setAttribute('role','status');
+enter.type='submit';enter.className='cyber-enter';local.type='button';local.className='cyber-local';local.hidden=!native;
+foot.className='cyber-foot';foot.append(element('span','ACCESO SEGURO'),element('span','SYS / 2.0'));foot.setAttribute('aria-hidden','true');
+form.append(top,title,rule,msg,labelRow,pass,enter,local,foot);login.append(form);document.body.append(login);
 login.addEventListener('cancel',e=>{if(!native)e.preventDefault();});local.onclick=()=>login.close();
 function status(s){badge.textContent=s;}
 function save(){
@@ -58,7 +106,7 @@ function save(){
 }
 function rollbackLocal(){records=clone(last);render();}
 function dirty(){return !!meta.pending||!meta.base||!equal(records,meta.base.records);}
-function showLogin(){if(!login.open)login.showModal();pass.value='';}
+function showLogin(){if(!login.open){pass.inputMode='numeric';keyboard.textContent='ABC';keyboard.setAttribute('aria-label','Cambiar a teclado completo');pass.value='';login.showModal();}else pass.value='';}
 function resetIdle(){if(native)return;clearTimeout(timer);if(session)timer=setTimeout(()=>endSession(true),300000);}
 for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,resetIdle,{passive:true});
 function endSession(automatic){

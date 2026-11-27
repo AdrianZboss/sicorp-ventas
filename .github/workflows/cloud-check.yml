@@ -55,6 +55,18 @@ jobs:
                 assert.equal(await frame.locator('#sicorp-theme-style').count(),1);
                 assert.equal(await frame.locator('#grid').count(),1);
                 assert.equal(await frame.locator('#sicorp-cloud-login input[type=password]').count(),1);
+                const key=frame.locator('#sicorp-login-key');
+                assert.equal(await key.getAttribute('inputmode'),'numeric');
+                assert.equal(await key.getAttribute('enterkeyhint'),'go');
+                await key.fill('012345');
+                assert.equal(await key.inputValue(),'012345');
+                await frame.getByRole('button',{name:'Cambiar a teclado completo'}).click();
+                assert.equal(await key.getAttribute('inputmode'),'text');
+                assert.equal(await key.getAttribute('type'),'password');
+                await frame.getByRole('button',{name:'Cambiar a teclado numérico'}).click();
+                assert.equal(await key.getAttribute('inputmode'),'numeric');
+                assert.equal(await key.inputValue(),'012345');
+                await key.fill('');
                 assert.equal(await frame.getByText('Continuar sin conexión',{exact:true}).isVisible(),false);
                 await page.keyboard.press('Escape');
                 assert.equal(await frame.locator('#sicorp-cloud-login[open]').count(),1);
