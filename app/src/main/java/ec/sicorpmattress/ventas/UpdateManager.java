@@ -70,7 +70,7 @@ final class UpdateManager {
         new AlertDialog.Builder(a,dialogTheme()).setTitle("Actualizaciones")
             .setMessage("Busca una nueva versión. Solo tendrás que autorizar GitHub la primera vez o cuando caduque tu sesión.")
             .setPositiveButton("Buscar", (d,w)->start(this::check))
-            .setNeutralButton("Descargar en navegador",(d,w)->openBrowserDownload())
+            .setNeutralButton("Cerrar sesión",(d,w)->{prefs.edit().remove("token").commit();cleanup();message("Sesión cerrada","Podrás autorizar GitHub nuevamente al buscar actualizaciones.");})
             .setNegativeButton("Cancelar",null).show();
     }
     private javax.crypto.SecretKey secretKey() throws Exception {
@@ -176,6 +176,7 @@ final class UpdateManager {
                 try{a.startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/login/device")));}catch(Exception e){message("GitHub","Abre https://github.com/login/device en tu navegador.");}
             });
         });
+        int failedPolls=0;
         try{
             while(!cancelled&&!closed&&SystemClock.elapsedRealtime()<end){
                 Thread.sleep(interval*1000L);if(cancelled||closed)return null;
@@ -183,11 +184,12 @@ final class UpdateManager {
                 try{
                     result=post(OAUTH,"client_id="+enc(CLIENT)+"&device_code="+enc(deviceCode)+"&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code");
                 }catch(Exception e){
-                    if(!networkFailure(e))throw e;
+                    if(!networkFailure(e)||++failedPolls>=3)throw e;
                     interval=Math.min(60,Math.max(5,interval*2));
                     ui(()->{if(authorization!=null)authorization.setMessage("Código: "+userCode+"\n\nSi ya autorizaste GitHub, no necesitas hacerlo otra vez. Estamos recuperando la conexión automáticamente. Mantén abierta Sicorp Ventas.");});
                     continue;
                 }
+                failedPolls=0;
                 if(result.has("access_token")){saveToken(result);return result;}
                 String error=result.optString("error");
                 if("slow_down".equals(error)){interval+=5;continue;}
