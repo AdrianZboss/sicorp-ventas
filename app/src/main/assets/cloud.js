@@ -114,60 +114,56 @@ const style=element('style');style.textContent=`
 #sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 #sicorp-cloud button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--selected);color:var(--accent)}
 #sicorp-cloud-status{flex:1;font-size:12px;color:var(--muted)}
-#sicorp-cloud-login{
- box-sizing:border-box;width:min(calc(100vw - 32px),420px);max-width:calc(100vw - 32px);
- max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);margin:auto;padding:0;
- border:1px solid #2e6572;border-radius:3px 24px 3px 24px;overflow:auto;
- color:#e6fbff;background:#0b111b;color-scheme:dark;
- box-shadow:0 0 0 4px #0a1826,0 0 0 5px #29404e,0 22px 80px #000b,0 0 36px #26e6e71c;
-}
-#sicorp-cloud-login::backdrop{
- background:radial-gradient(ellipse at 20% 15%,#10313d 0%,transparent 54%),radial-gradient(ellipse at 90% 90%,#351b48 0%,transparent 58%),repeating-linear-gradient(0deg,transparent 0 31px,#1c35402b 31px 32px),repeating-linear-gradient(90deg,transparent 0 31px,#1c35402b 31px 32px),#070b12;
-}
-#sicorp-cloud-login form{display:grid;gap:14px;margin:0;padding:24px;position:relative;overflow:hidden;text-align:left}
-#sicorp-cloud-login form::before{content:"";position:absolute;top:0;left:0;width:45%;height:3px;background:linear-gradient(90deg,#45f7e3 0 76%,#ed67dc 76% 90%,transparent 90%)}
-#sicorp-cloud-login .cyber-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
-#sicorp-cloud-login .cyber-id{font:700 10px/1.4 ui-monospace,monospace;letter-spacing:1.7px;color:#7cbdc9}
-#sicorp-cloud-login .cyber-badge{display:flex;align-items:center;gap:7px;border:1px solid #32514f;padding:5px 7px;color:#9ce7d6;font:700 9px/1.2 ui-monospace,monospace;letter-spacing:.8px;white-space:nowrap}
-#sicorp-cloud-login .cyber-badge::before{content:"";width:6px;height:6px;background:#56f1cb;box-shadow:0 0 9px #56f1cb}
-#sicorp-cloud-login .cyber-brand{margin:5px 0 0;font:800 clamp(32px,8vw,46px)/.97 system-ui,sans-serif;letter-spacing:-2.5px;color:#f1fcff}
-#sicorp-cloud-login .cyber-brand span{display:block;color:#42e8db;font-size:.58em;letter-spacing:6px;line-height:1.5}
-#sicorp-cloud-login .cyber-rule{height:1px;background:linear-gradient(90deg,#44eadb,#2a3e52 65%,#d960bb)}
-#sicorp-cloud-login .cyber-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#a8c7d7;font:700 11px/1.4 ui-monospace,monospace;letter-spacing:1.5px}
-#sicorp-cloud-login input{box-sizing:border-box;width:100%;margin:0;min-height:62px;padding:10px 16px;background:#070d16;color:#e5fff9;border:1px solid #396678;border-radius:3px 12px 3px 12px;font:600 24px/1.2 ui-monospace,monospace;letter-spacing:5px;text-align:center;caret-color:#5bffe1;outline:none}
-#sicorp-cloud-login input::placeholder{color:#688291;font-size:12px;letter-spacing:2px;font-weight:500}
-#sicorp-cloud-login input:focus{border-color:#54f2de;box-shadow:0 0 0 2px #54f2de30,0 0 18px #54f2de13}
-#sicorp-cloud-login button{box-sizing:border-box;min-height:48px;margin:0}
-#sicorp-cloud-login button:focus-visible{outline:2px solid #f6b8ff;outline-offset:3px}
-#sicorp-cloud-login .cyber-keyboard{width:auto;min-height:30px;padding:4px 9px;border:1px solid #355468;background:#121e2c;color:#9aece2;border-radius:3px;font:700 11px/1 ui-monospace,monospace;letter-spacing:.5px}
-#sicorp-cloud-login .cyber-enter{width:100%;border:1px solid #6bffdf;border-radius:3px 12px 3px 12px;background:#4ef1d7;color:#071a20;font-size:14px;font-weight:850;letter-spacing:2px;box-shadow:0 0 20px #4ef1d726}
-#sicorp-cloud-login .cyber-enter:disabled{opacity:.55}
-#sicorp-cloud-login .cyber-local{width:100%;border:1px solid #394e60;background:#111b29;color:#9cb6c8;border-radius:3px 12px 3px 12px;font-size:12px}
-#sicorp-cloud-login .cyber-message{margin:0;min-height:18px;font-size:12px;line-height:1.4;color:#a5bccc;white-space:pre-wrap;overflow-wrap:anywhere}
-#sicorp-cloud-login .cyber-foot{display:flex;justify-content:space-between;gap:8px;margin-top:0;color:#6f9aaa;font:600 9px/1.4 ui-monospace,monospace;letter-spacing:1.2px}
-#sicorp-cloud-login .cyber-foot span:last-child{color:#e697d6}
+html[data-sicorp-theme] #sicorp-cloud-login{box-sizing:border-box;width:min(calc(100vw - 32px),420px);max-width:calc(100vw - 32px);max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);margin:auto;padding:0;overflow:auto;border:1px solid var(--line);border-radius:24px;background:var(--surface);color:var(--text);box-shadow:0 18px 64px #0003}
+html[data-sicorp-theme] #sicorp-cloud-login::backdrop{background:var(--canvas);opacity:1}
+#sicorp-cloud-login form{display:grid;gap:12px;margin:0;padding:26px;position:relative;text-align:left}
+#sicorp-cloud-login .login-top{display:flex;justify-content:flex-end}
+#sicorp-cloud-login .login-theme{min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--text);font-size:12px}
+#sicorp-cloud-login .login-mark{display:grid;place-items:center;margin:0 auto;width:58px;height:58px;border-radius:17px;background:var(--navy);color:var(--on-primary)}
+#sicorp-cloud-login .login-mark svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#sicorp-cloud-login .login-brand{margin:0;text-align:center;color:var(--text);font:800 27px/1.15 system-ui,sans-serif;letter-spacing:-.8px}
+#sicorp-cloud-login .login-brand span{display:block;color:var(--muted);font:500 13px/1.7 system-ui,sans-serif;letter-spacing:0;margin-top:4px}
+#sicorp-cloud-login .login-rule{height:1px;background:var(--line);margin:4px 0}
+#sicorp-cloud-login .login-welcome{margin:0;font-size:20px;font-weight:750}
+#sicorp-cloud-login .login-label{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--text);font-size:13px;font-weight:650}
+html[data-sicorp-theme] #sicorp-cloud-login input[type=password]{box-sizing:border-box;width:100%;margin:0;min-height:54px;padding:10px 15px;background:var(--soft);color:var(--text);border:1px solid var(--line);border-radius:13px;font:600 20px/1.2 system-ui,sans-serif;letter-spacing:3px;outline:none}
+#sicorp-cloud-login input[type=password]::placeholder{color:var(--muted);font-size:13px;letter-spacing:0;font-weight:400}
+#sicorp-cloud-login input[type=password]:focus{border-color:var(--focus);box-shadow:0 0 0 2px var(--selected)}
+#sicorp-cloud-login button{box-sizing:border-box;min-height:46px;margin:0}
+#sicorp-cloud-login button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+#sicorp-cloud-login .login-keyboard{width:auto;min-height:32px;padding:5px 9px;border:1px solid var(--line);background:var(--soft);color:var(--accent);border-radius:9px;font-size:11px;font-weight:700}
+#sicorp-cloud-login .login-enter{width:100%;border:0;border-radius:14px;background:var(--navy);color:var(--on-primary);font-size:15px;font-weight:750;min-height:52px}
+#sicorp-cloud-login .login-enter:disabled{opacity:.55}
+#sicorp-cloud-login .login-local{width:100%;border:1px solid var(--line);background:var(--soft);color:var(--muted);border-radius:14px;font-size:12px}
+#sicorp-cloud-login .login-message{margin:0;min-height:18px;font-size:13px;line-height:1.4;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+#sicorp-cloud-login .login-foot{display:flex;align-items:center;justify-content:center;gap:6px;color:var(--muted);font-size:11px;padding-top:4px}
+#sicorp-cloud-login .login-trust{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--text);font-weight:500}
+#sicorp-cloud-login .login-trust input{width:20px;min-height:20px;accent-color:var(--accent);padding:0;margin:0;flex:none}
 #sicorp-cloud-login [hidden],#sicorp-cloud [hidden]{display:none!important}
-@media(max-height:480px){#sicorp-cloud-login form{gap:9px;padding:16px 20px}#sicorp-cloud-login .cyber-brand{font-size:30px}#sicorp-cloud-login input{min-height:48px}}
+@media(max-height:550px){#sicorp-cloud-login form{gap:8px;padding:15px 20px}#sicorp-cloud-login .login-mark{width:44px;height:44px}#sicorp-cloud-login .login-mark svg{width:24px;height:24px}}
 `;
 document.head.append(style);
 const bar=element('div');bar.id='sicorp-cloud';const badge=element('span');badge.id='sicorp-cloud-status';const syncButton=element('button','Conectar nube'),logoutButton=element('button','Cerrar sesión');syncButton.type=logoutButton.type='button';logoutButton.hidden=true;bar.append(badge,syncButton,logoutButton);document.querySelector('header').append(bar);
 const login=element('dialog');login.id='sicorp-cloud-login';
-const form=element('form'),title=element('h2','SICORP'),msg=element('p','Acceso privado con tu clave maestra.'),pass=element('input'),enter=element('button','ACCEDER  ›'),local=element('button','Continuar sin conexión');
-const top=element('div'),id=element('span','S // V · TERMINAL 01'),secure=element('span','PRIVADO'),brandLine=element('span','VENTAS'),rule=element('div'),labelRow=element('div'),label=element('label','CLAVE DE ACCESO'),keyboard=element('button','ABC'),foot=element('div');
-top.className='cyber-top';id.className='cyber-id';secure.className='cyber-badge';top.append(id,secure);
-title.className='cyber-brand';title.id='sicorp-login-title';title.append(brandLine);login.setAttribute('aria-labelledby',title.id);
-rule.className='cyber-rule';rule.setAttribute('aria-hidden','true');
-labelRow.className='cyber-label';label.htmlFor='sicorp-login-key';keyboard.type='button';keyboard.className='cyber-keyboard';keyboard.setAttribute('aria-label','Cambiar a teclado completo');labelRow.append(label,keyboard);
-pass.id='sicorp-login-key';pass.type='password';pass.inputMode='numeric';pass.setAttribute('enterkeyhint','go');pass.autocapitalize='off';pass.spellcheck=false;pass.required=true;pass.autocomplete='off';pass.placeholder='INTRODUCE TU CLAVE';pass.setAttribute('aria-label','Clave maestra');pass.setAttribute('aria-describedby','sicorp-login-message');
+const form=element('form'),title=element('h2','SICORP Ventas'),msg=element('p','Accede a tu cuenta para continuar.'),pass=element('input'),enter=element('button','Iniciar sesión'),local=element('button','Continuar sin conexión');
+const top=element('div'),themeButton=element('button'),mark=element('div'),brandLine=element('span','Gestión de ventas'),rule=element('div'),welcome=element('h3','Bienvenido'),labelRow=element('div'),label=element('label','Clave de acceso'),keyboard=element('button','ABC'),foot=element('div');
+top.className='login-top';themeButton.type='button';themeButton.className='login-theme';top.append(themeButton);
+function updateLoginTheme(){const dark=document.documentElement.dataset.sicorpTheme==='dark';themeButton.textContent=dark?'☀ Claro':'☾ Oscuro';themeButton.setAttribute('aria-label',dark?'Cambiar inicio a modo claro':'Cambiar inicio a modo oscuro');}
+themeButton.onclick=()=>{document.getElementById('sicorpThemeToggle')?.click();updateLoginTheme();};
+new MutationObserver(updateLoginTheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-sicorp-theme']});updateLoginTheme();
+mark.className='login-mark';mark.setAttribute('aria-hidden','true');mark.innerHTML='<svg viewBox="0 0 24 24"><path d="M4 20h16M6 16v-5m6 5V5m6 11V8"/><path d="m5 7 7-4 7 2"/></svg>';
+title.className='login-brand';title.id='sicorp-login-title';title.append(brandLine);login.setAttribute('aria-labelledby',title.id);
+rule.className='login-rule';rule.setAttribute('aria-hidden','true');welcome.className='login-welcome';
+labelRow.className='login-label';label.htmlFor='sicorp-login-key';keyboard.type='button';keyboard.className='login-keyboard';keyboard.setAttribute('aria-label','Cambiar a teclado completo');labelRow.append(label,keyboard);
+pass.id='sicorp-login-key';pass.type='password';pass.inputMode='numeric';pass.setAttribute('enterkeyhint','go');pass.autocapitalize='off';pass.spellcheck=false;pass.required=true;pass.autocomplete='off';pass.placeholder='Introduce tu clave';pass.setAttribute('aria-label','Clave maestra');pass.setAttribute('aria-describedby','sicorp-login-message');
 keyboard.onclick=()=>{const numeric=pass.inputMode==='numeric';pass.inputMode=numeric?'text':'numeric';keyboard.textContent=numeric?'123':'ABC';keyboard.setAttribute('aria-label',numeric?'Cambiar a teclado numérico':'Cambiar a teclado completo');pass.focus();};
-msg.id='sicorp-login-message';msg.className='cyber-message';msg.setAttribute('role','status');
-enter.type='submit';enter.className='cyber-enter';local.type='button';local.className='cyber-local';local.hidden=true;
-foot.className='cyber-foot';foot.append(element('span','ACCESO SEGURO'),element('span','SYS / 2.0'));foot.setAttribute('aria-hidden','true');
+msg.id='sicorp-login-message';msg.className='login-message';msg.setAttribute('role','status');
+enter.type='submit';enter.className='login-enter';local.type='button';local.className='login-local';local.hidden=true;
+foot.className='login-foot';foot.append(element('span','🔒'),element('span','Acceso privado'));foot.setAttribute('aria-hidden','true');
 const trust=element('input'),trustLabel=element('label',' Guardar copia cifrada en este dispositivo personal'),trustHelp=element('p','En equipos compartidos, no actives esta opción. Los cambios sin conexión se conservan en esta pestaña hasta sincronizar.');
-trust.type='checkbox';trust.id='sicorp-trusted-device';trustLabel.htmlFor=trust.id;trustLabel.prepend(trust);trustLabel.className='cyber-trust';trustHelp.className='cyber-message';trustLabel.hidden=trustHelp.hidden=native;
+trust.type='checkbox';trust.id='sicorp-trusted-device';trustLabel.htmlFor=trust.id;trustLabel.prepend(trust);trustLabel.className='login-trust';trustHelp.className='login-message';trustLabel.hidden=trustHelp.hidden=native;
 try{trust.checked=!native&&getVault().store==='local';}catch{}
-style.textContent+='\n#sicorp-cloud-login .cyber-trust{display:flex;align-items:center;gap:9px;font-size:12px;color:#a8c7d7}#sicorp-cloud-login .cyber-trust input{width:20px;min-height:20px;accent-color:#4ef1d7;padding:0;margin:0;flex:none}';
-form.append(top,title,rule,msg,labelRow,pass,trustLabel,trustHelp,enter,local,foot);login.append(form);document.body.append(login);
+form.append(top,mark,title,rule,welcome,msg,labelRow,pass,trustLabel,trustHelp,enter,local,foot);login.append(form);document.body.append(login);
 login.addEventListener('cancel',e=>e.preventDefault());local.onclick=()=>{};
 function status(s){badge.textContent=s;}
 function save(){

@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='sicorp-shell-2.1.0',ROOT=new URL('./',self.location.href);
+const CACHE='sicorp-shell-2.1.1',ROOT=new URL('./',self.location.href);
 const files=['web/','web/index.html','web/boot.js','app/src/main/assets/index.html','app/src/main/assets/theme.js','app/src/main/assets/simple-ui.js','app/src/main/assets/cloud.js'];
 const keys=new Set(files.map(p=>new URL(p,ROOT).pathname));
 self.addEventListener('install',e=>e.waitUntil((async()=>{const cache=await caches.open(CACHE);await cache.addAll(files.map(p=>new Request(new URL(p,ROOT),{cache:'reload'})));await self.skipWaiting();})()));

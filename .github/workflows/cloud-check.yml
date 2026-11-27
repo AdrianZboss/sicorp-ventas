@@ -1,7 +1,7 @@
 name: Verificar SICORP Cloud
 on:
   push:
-    branches: [sicorp-web-cloud, sicorp-offline-test]
+    branches: [sicorp-web-cloud, sicorp-offline-test, sicorp-report-test]
     paths:
       - 'app/**'
       - 'web/**'
@@ -59,6 +59,13 @@ jobs:
                 assert.equal(await frame.locator('#grid').count(),1);
                 assert.equal(await frame.locator('#sicorp-cloud-login input[type=password]').count(),1);
                 const key=frame.locator('#sicorp-login-key');
+                const root=frame.locator('html');
+                const before=await root.getAttribute('data-sicorp-theme');
+                await frame.locator('.login-theme').click();
+                assert.notEqual(await root.getAttribute('data-sicorp-theme'),before);
+                assert.equal(await frame.getByRole('button',{name:'Iniciar sesión',exact:true}).count(),1);
+                await frame.locator('.login-theme').click();
+                assert.equal(await root.getAttribute('data-sicorp-theme'),before);
                 const urls=await frame.locator('script[src]').evaluateAll(nodes=>nodes.map(n=>n.src));
                 assert.ok(urls.some(u=>u.includes('/cloud.js?v=')));
                 assert.ok((await page.locator('#app').getAttribute('src')).includes('index.html?v='));

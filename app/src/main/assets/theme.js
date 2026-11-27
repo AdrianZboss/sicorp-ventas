@@ -36,14 +36,15 @@ html[data-sicorp-theme="dark"] dialog::backdrop{background:#000a}
   button.id='sicorpThemeToggle';button.type='button';
   const parent=document.querySelector('header .headcount')||document.querySelector('header')||document.body;
   parent.appendChild(button);
+  const nativeTheme=!!(window.Native&&typeof Native.getAppearance==='function');
   let current='dark';
-  try{current=Native.getAppearance()==='light'?'light':'dark';}catch(e){}
+  try{const saved=nativeTheme?Native.getAppearance():localStorage.getItem('sicorp.theme');current=saved==='light'||saved==='dark'?saved:(!nativeTheme&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');}catch(e){}
   function apply(mode,save){
     current=mode;
     document.documentElement.dataset.sicorpTheme=mode;
     button.textContent=mode==='dark'?'☀ Claro':'☾ Oscuro';
     button.setAttribute('aria-label',mode==='dark'?'Activar modo claro':'Activar modo oscuro');
-    if(save){try{Native.setAppearance(mode);}catch(e){}}
+    if(save){try{if(nativeTheme)Native.setAppearance(mode);else localStorage.setItem('sicorp.theme',mode);}catch(e){}}
   }
   button.addEventListener('click',()=>apply(current==='dark'?'light':'dark',true));
   apply(current,false);
