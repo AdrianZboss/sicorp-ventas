@@ -268,3 +268,86 @@
  open=function(p){originalOpen(p);colorize(document.getElementById('modal'),p);};
  renderCatalog();
 })();
+
+
+/* v1.4.11 - registro simultaneo de medidas, guardado unico y reversible. */
+(function(){
+ 'use strict';
+ const by=id=>document.getElementById(id), modal=by('modal'), oldVariants=by('variants'), add=by('add');
+ if(!modal||!oldVariants||!add||by('sicorp-batch'))return;
+ const make=(tag,txt,cls)=>{const n=document.createElement(tag);if(txt)n.textContent=txt;if(cls)n.className=cls;return n;};
+ const style=make('style');style.textContent=`
+ #modal #sicorp-batch{display:grid;gap:8px;margin:10px 0}
+ #modal .batch-row{display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:6px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+ #modal .batch-row.selected{border-color:var(--accent);background:var(--hero)}
+ #modal .batch-label{min-width:0;display:flex;flex-direction:column;text-align:left;gap:3px;padding:5px;background:transparent;color:var(--text);font-size:14px;overflow-wrap:anywhere}
+ #modal .batch-label small{font-size:11px;font-weight:500;color:var(--muted)}
+ #modal .batch-stepper{display:grid;grid-template-columns:44px 44px 44px;align-items:center;gap:0}
+ #modal .batch-stepper button{padding:0;min-height:44px;min-width:44px;border-radius:12px;background:var(--selected);color:var(--accent);font-size:22px}
+ #modal .batch-stepper input{width:44px;min-width:0;text-align:center;padding:3px 0;border:0;background:transparent;color:var(--text);font-size:16px;font-weight:750;appearance:textfield}
+ #modal .batch-stepper input::-webkit-inner-spin-button,#modal .batch-stepper input::-webkit-outer-spin-button{appearance:none}
+ #modal .batch-hint{font-size:12px;color:var(--muted);margin:3px 0}
+ #modal .batch-footer{position:sticky;bottom:-1px;background:var(--surface);padding:10px 0 2px;z-index:2;border-top:1px solid var(--line)}
+ #modal .batch-summary{font-size:12px;color:var(--muted);font-weight:650;margin-bottom:7px}
+ #modal .batch-preview{margin:14px 0 4px}
+ #modal .batch-preview summary{padding:10px 0;color:var(--accent);font-weight:650}
+ #modal .batch-preview #mainphoto{max-height:180px;object-fit:contain}
+ #modal [hidden]{display:none!important}
+ `;document.head.append(style);
+ const oldQty=by('minus').closest('.row');
+ oldVariants.hidden=true;oldQty.hidden=true;
+ const heading=oldVariants.previousElementSibling;heading.textContent='Medidas y cantidades';
+ const hint=make('p','Indica cuántas unidades vendiste de cada medida. Las que queden en 0 no se registran.','batch-hint');
+ const rows=make('div');rows.id='sicorp-batch';rows.setAttribute('role','group');rows.setAttribute('aria-label','Cantidades por medida');
+ oldVariants.after(hint,rows);
+ const preview=make('details','','batch-preview');preview.append(make('summary','Ver fotos y detalles de la medida'));
+ const photo=by('mainphoto'), photos=by('photos'), info=by('variantinfo');
+ const details=by('details').closest('details');
+ rows.after(preview);preview.append(info,photo,photos,details);
+ const footer=make('div','','batch-footer'), summary=make('div','','batch-summary');
+ summary.setAttribute('aria-live','polite');add.before(footer);footer.append(summary,add);
+ let pending=[], controls=[], saving=false, openedDay='';
+ const sum=()=>pending.reduce((a,b)=>a+b,0);
+ const refresh=()=>{
+  controls.forEach((c,i)=>{c.row.classList.toggle('selected',pending[i]>0);if(document.activeElement!==c.input)c.input.value=String(pending[i]);c.minus.disabled=pending[i]===0;c.plus.disabled=pending[i]>=999;c.label.setAttribute('aria-pressed',String(variant===i));});
+  const units=sum(), sizes=pending.filter(n=>n>0).length;
+  summary.textContent=units+' unidad'+(units===1?'':'es')+' · '+sizes+' medida'+(sizes===1?'':'s')+' · '+fmtDay(openedDay||day);
+  add.disabled=saving||units===0;add.textContent=units?'Registrar '+units+' unidad'+(units===1?'':'es'):'Registrar ventas';
+ };
+ const set=(i,n)=>{pending[i]=Math.max(0,Math.min(999,Math.trunc(Number(n)||0)));refresh();};
+ const oldUpdate=updateVariant;
+ updateVariant=function(){oldUpdate();refresh();};
+ function build(){
+  rows.replaceChildren();controls=[];
+  product.variants.forEach((v,i)=>{
+   const row=make('div','','batch-row'), label=make('button','','batch-label');label.type='button';
+   label.append(make('strong',[v.size,product.cat==='Bases'?v.height:''].filter(Boolean).join(' · ')||'Única medida'));
+   const sub=[v.dim!==v.size?v.dim:'',v.code?'Código: '+v.code:''].filter(Boolean).join(' · ');
+   if(sub)label.append(make('small',sub));
+   label.onclick=()=>{variant=i;updateVariant();preview.open=true;};
+   const stepper=make('div','','batch-stepper'), minus=make('button','−'), plus=make('button','+'), input=make('input');
+   minus.type=plus.type='button';minus.setAttribute('aria-label','Restar '+v.size);plus.setAttribute('aria-label','Sumar '+v.size);
+   input.type='number';input.inputMode='numeric';input.min='0';input.max='999';input.step='1';input.value='0';input.setAttribute('aria-label','Cantidad '+v.size+(v.height?' '+v.height:''));
+   minus.onclick=()=>{set(i,pending[i]-1);input.value=String(pending[i]);};plus.onclick=()=>{set(i,pending[i]+1);input.value=String(pending[i]);};
+   input.oninput=()=>{set(i,input.value);if(input.value!==''&&Number(input.value)!==pending[i])input.value=String(pending[i]);};input.onblur=()=>{input.value=String(pending[i]);};input.onfocus=()=>input.select();
+   stepper.append(minus,input,plus);row.append(label,stepper);rows.append(row);controls.push({row,label,minus,plus,input});
+  });refresh();
+ }
+ const oldOpen=open;
+ open=function(p){pending=p.variants.map(()=>0);controls=[];openedDay=day;saving=false;preview.open=false;oldOpen(p);build();modal.scrollTop=0;};
+ add.onclick=()=>{
+  if(saving||!sum()||!product||day!==openedDay)return;
+  saving=true;refresh();
+  const had=Object.prototype.hasOwnProperty.call(records,day), before=records[day], next=list().map(x=>({...x})), units=sum();
+  for(let i=0;i<pending.length;i++){
+   const n=pending[i];if(!n)continue;
+   const existing=next.find(x=>x.id===product.id&&x.v===i);
+   if(existing){if(!Number.isSafeInteger(existing.q+n)){saving=false;refresh();notify('Cantidad fuera de rango.');return;}existing.q+=n;}
+   else next.push({id:product.id,v:i,q:n});
+  }
+  records[day]=next;
+  if(!persist()){if(had)records[day]=before;else delete records[day];saving=false;refresh();return;}
+  pending=pending.map(()=>0);modal.close();render();notify(units+' unidad'+(units===1?' registrada':'es registradas'));saving=false;
+ };
+ modal.addEventListener('close',()=>{pending=[];controls=[];saving=false;});
+})();
