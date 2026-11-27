@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
  private static final String CLOUD_URL="https://jooxurfzxumbyjdcmzjs.supabase.co";
  private static final String CLOUD_KEY="sb_publishable_ZYRZ5ji-puffBS1P46VlWA_Z8pEstps";
  private boolean allowedCloud(String path,String method){
-  return ("POST".equals(method)&&("/auth/v1/token?grant_type=password".equals(path)||"/auth/v1/logout?scope=local".equals(path)||"/rest/v1/rpc/sicorp_sync_commit".equals(path)||"/storage/v1/object/list/sicorp-evidence".equals(path)))||("GET".equals(method)&&"/rest/v1/sicorp_history?select=revision,records".equals(path));
+  return ("POST".equals(method)&&("/auth/v1/token?grant_type=password".equals(path)||"/auth/v1/token?grant_type=refresh_token".equals(path)||"/auth/v1/logout?scope=local".equals(path)||"/rest/v1/rpc/sicorp_sync_commit".equals(path)||"/storage/v1/object/list/sicorp-evidence".equals(path)))||("GET".equals(method)&&"/rest/v1/sicorp_history?select=revision,records".equals(path));
  }
  private void respondCloud(String id,int code,String body){runOnUiThread(()->{if(web!=null&&!isDestroyed()&&!isFinishing())web.evaluateJavascript("window.sicorpCloudReceive&&window.sicorpCloudReceive("+org.json.JSONObject.quote(id)+","+code+","+org.json.JSONObject.quote(body)+")",null);});}
  private void performCloud(String id,String path,String method,String token,String body){
@@ -99,6 +99,33 @@ public class MainActivity extends Activity {
  @JavascriptInterface public void cloudEvidenceUpload(String owner,String token){chooseEvidence(owner,token,null,null);}
  @JavascriptInterface public void cloudEvidenceDownload(String owner,String token,String name,String mime){chooseEvidence(owner,token,name,mime);}
 
+ @JavascriptInterface public String cloudVaultRead(){return getSharedPreferences("sales",MODE_PRIVATE).getString("account_vault_v3","");}
+ @JavascriptInterface public boolean cloudVaultWrite(String value){
+  if(value==null||value.length()>100000)return false;
+  SharedPreferences.Editor ed=getSharedPreferences("sales",MODE_PRIVATE).edit();
+  if(value.isEmpty())ed.remove("account_vault_v3");else ed.putString("account_vault_v3",value);
+  return ed.commit();
+ }
+ @JavascriptInterface public String cloudVaultKey(String secret,String salt){
+  if(secret==null||secret.length()>1024||salt==null||salt.length()>100)return "";
+  javax.crypto.spec.PBEKeySpec spec=null;
+  try{byte[] bytes=android.util.Base64.decode(salt,android.util.Base64.NO_WRAP);if(bytes.length!=16)return "";
+   spec=new javax.crypto.spec.PBEKeySpec(secret.toCharArray(),bytes,600000,256);
+   byte[] key=javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+   String result=android.util.Base64.encodeToString(key,android.util.Base64.NO_WRAP);java.util.Arrays.fill(key,(byte)0);return result;
+  }catch(Exception e){return "";}finally{if(spec!=null)spec.clearPassword();}
+ }
+ @JavascriptInterface public String cloudVaultCipher(boolean encrypt,String key,String iv,String input){
+  if(key==null||iv==null||input==null||key.length()>100||iv.length()>100||input.length()>100000)return "";
+  try{byte[] k=android.util.Base64.decode(key,android.util.Base64.NO_WRAP),nonce=android.util.Base64.decode(iv,android.util.Base64.NO_WRAP);
+   if(k.length!=32||nonce.length!=12)return "";
+   javax.crypto.Cipher cipher=javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+   cipher.init(encrypt?javax.crypto.Cipher.ENCRYPT_MODE:javax.crypto.Cipher.DECRYPT_MODE,new javax.crypto.spec.SecretKeySpec(k,"AES"),new javax.crypto.spec.GCMParameterSpec(128,nonce));java.util.Arrays.fill(k,(byte)0);
+   byte[] bytes=encrypt?input.getBytes(java.nio.charset.StandardCharsets.UTF_8):android.util.Base64.decode(input,android.util.Base64.NO_WRAP);
+   byte[] result=cipher.doFinal(bytes);
+   return encrypt?android.util.Base64.encodeToString(result,android.util.Base64.NO_WRAP):new String(result,java.nio.charset.StandardCharsets.UTF_8);
+  }catch(Exception e){return "";}
+ }
  @JavascriptInterface public String cloudMeta(){return getSharedPreferences("sales",MODE_PRIVATE).getString("cloud_meta","{}");}
  @JavascriptInterface public boolean cloudSave(String value,String meta){
   if(value==null||meta==null||value.length()>2200000||meta.length()>4600000)return false;
@@ -122,7 +149,7 @@ public class MainActivity extends Activity {
  @JavascriptInterface public void copy(String value){runOnUiThread(()->{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(ClipData.newPlainText("Sicorp Ventas",value));});}
  @JavascriptInterface public void share(String value){runOnUiThread(()->{Intent intent=new Intent(Intent.ACTION_SEND);intent.setType("text/plain");intent.putExtra(Intent.EXTRA_TEXT,value);startActivity(Intent.createChooser(intent,"Compartir reporte"));});}
  }
- @Override public void onBackPressed(){web.evaluateJavascript("(function(){var m=document.getElementById('modal');if(m.open){m.close();return true;}if(activePage!=='catalog'){page('catalog');return true;}return false;})()",v->{if(!"true".equals(v))super.onBackPressed();});}
+ @Override public void onBackPressed(){web.evaluateJavascript("(function(){var l=document.getElementById('sicorp-cloud-login');if(l&&l.open)return true;var m=document.getElementById('modal');if(m.open){m.close();return true;}if(activePage!=='catalog'){page('catalog');return true;}return false;})()",v->{if(!"true".equals(v))super.onBackPressed();});}
  @Override protected void onResume(){super.onResume();if(updater!=null)updater.resume();}
  @Override protected void onPause(){if(updater!=null)updater.pause();super.onPause();}
  @Override protected void onDestroy(){if(updater!=null)updater.close();cloudExecutor.shutdownNow();web.removeJavascriptInterface("Native");web.destroy();super.onDestroy();}

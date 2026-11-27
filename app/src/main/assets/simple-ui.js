@@ -42,11 +42,11 @@
     .family-copy strong{font-size:15px;font-weight:750}
     .family-copy small{font-size:12px}
     .family-arrow{font-size:20px;color:var(--accent)}
-    .family-grid{grid-template-columns:1fr;gap:8px;padding-top:8px}
-    html[data-sicorp-theme] .product{display:grid;grid-template-columns:84px minmax(0,1fr);align-items:center;min-height:96px;border-radius:16px;padding:7px;gap:2px}
-    .product img{width:84px;height:84px;border-radius:11px;object-fit:contain}
+    .family-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding-top:8px}
+    html[data-sicorp-theme] .product{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr;align-items:stretch;min-width:0;min-height:168px;border-radius:16px;padding:7px;gap:5px}
+    .product img{width:100%;height:110px;border-radius:11px;object-fit:contain;background:#fff}
     .product .body{padding:7px 8px;gap:4px;min-width:0}
-    .product strong{font-size:15px;font-weight:720}
+    .product strong{font-size:13px;font-weight:750;overflow-wrap:anywhere}
     .product .smalladd{font-size:12px;font-weight:750;color:var(--accent)}
     .product .tag{font-size:10px}
     html[data-sicorp-theme] .nav{bottom:0;padding:7px 12px calc(8px + env(safe-area-inset-bottom));gap:5px;border-top:1px solid var(--line);background:var(--surface)}
@@ -70,8 +70,8 @@
     #sicorpUpdates .row{flex-wrap:nowrap}
     #sicorpUpdates button{color:var(--accent);background:var(--selected);border-radius:13px;min-height:44px}
     #sicorpUpdates .muted{font-size:12px}
-    @media(min-width:560px){.family-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:339px){main{padding-inline:10px}#brands button{font-size:11px}.product img{width:68px;height:68px}html[data-sicorp-theme] .product{grid-template-columns:68px minmax(0,1fr)}}
+    @media(min-width:560px){.family-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:339px){main{padding-inline:10px}#brands button{font-size:11px}.product img{height:88px}.product strong{font-size:12px}}
     @media(max-height:480px) and (orientation:landscape){.nav button{min-height:44px}.nav b{display:inline-flex;margin:0 5px 0 0;vertical-align:middle}.modern-top{margin-bottom:5px}}
   `;
   document.head.appendChild(style);
@@ -277,14 +277,14 @@
  if(!modal||!oldVariants||!add||by('sicorp-batch'))return;
  const make=(tag,txt,cls)=>{const n=document.createElement(tag);if(txt)n.textContent=txt;if(cls)n.className=cls;return n;};
  const style=make('style');style.textContent=`
- #modal #sicorp-batch{display:grid;gap:8px;margin:10px 0}
- #modal .batch-row{display:grid;grid-template-columns:minmax(0,1fr) 132px;gap:6px;align-items:center;padding:8px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+ #modal #sicorp-batch{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:9px;margin:10px 0}
+ #modal .batch-row{display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:128px;gap:8px;align-items:stretch;padding:8px;border:1px solid var(--line);border-radius:15px;background:var(--surface)}
  #modal .batch-row.selected{border-color:var(--accent);background:var(--hero)}
  #modal .batch-label{min-width:0;display:flex;flex-direction:column;text-align:left;gap:3px;padding:5px;background:transparent;color:var(--text);font-size:14px;overflow-wrap:anywhere}
  #modal .batch-label small{font-size:11px;font-weight:500;color:var(--muted)}
- #modal .batch-stepper{display:grid;grid-template-columns:44px 44px 44px;align-items:center;gap:0}
- #modal .batch-stepper button{padding:0;min-height:44px;min-width:44px;border-radius:12px;background:var(--selected);color:var(--accent);font-size:22px}
- #modal .batch-stepper input{width:44px;min-width:0;text-align:center;padding:3px 0;border:0;background:transparent;color:var(--text);font-size:16px;font-weight:750;appearance:textfield}
+ #modal .batch-stepper{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:0;min-width:0}
+ #modal .batch-stepper button{padding:0;min-height:44px;min-width:40px;border-radius:12px;background:var(--selected);color:var(--accent);font-size:22px}
+ #modal .batch-stepper input{width:100%;min-width:0;text-align:center;padding:3px 0;border:0;background:transparent;color:var(--text);font-size:16px;font-weight:750;appearance:textfield}
  #modal .batch-stepper input::-webkit-inner-spin-button,#modal .batch-stepper input::-webkit-outer-spin-button{appearance:none}
  #modal .batch-hint{font-size:12px;color:var(--muted);margin:3px 0}
  #modal .batch-footer{position:sticky;bottom:-1px;background:var(--surface);padding:10px 0 2px;z-index:2;border-top:1px solid var(--line)}

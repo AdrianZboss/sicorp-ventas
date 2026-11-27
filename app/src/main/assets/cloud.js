@@ -41,9 +41,74 @@ function merge(b,l,r,initial){
  }
  return {records:canonical(out),conflicts};
 }
-let meta={base:null,pending:null},session=null,epoch=0,busy=false,conflict=false,callbacks=new Map(),seq=0,timer,expiry;
-try{if(native){const m=JSON.parse(Native.cloudMeta()||'{}');if(m.base&&Number.isSafeInteger(m.base.revision)){m.base.records=canonical(m.base.records);meta.base=m.base;}if(m.pending){m.pending.records=canonical(m.pending.records);meta.pending=m.pending;}}else records={};records=canonical(records);}catch(e){conflict=true;}
-let last=clone(records);
+let meta={base:null,pending:null,owner:null},session=null,epoch=0,busy=false,conflict=false,callbacks=new Map(),seq=0,timer,expiry;
+let unlocked=false,owner=null,refreshToken=null,sessionUntil=0, vaultKey=null,vaultSalt=null, vaultStore=null, vaultWrites=0,vaultFailed=false,vaultTail=Promise.resolve(),releaseBrowserLock=null;
+const vaultName='sicorp.account.v3', encoder=new TextEncoder(),decoder=new TextDecoder();
+const b64=bytes=>{let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);};
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const random=n=>crypto.getRandomValues(new Uint8Array(n));
+function readNative(){
+ const m=JSON.parse(Native.cloudMeta()||'{}');
+ const r=canonical(JSON.parse(Native.read()||'{}'));
+ const v={base:null,pending:null,owner:m.owner||null};
+ if(m.base){if(!Number.isSafeInteger(m.base.revision))throw Error('Revisión local inválida');v.base={revision:m.base.revision,records:canonical(m.base.records)};}
+ if(m.pending)v.pending={...m.pending,records:canonical(m.pending.records)};
+ return {records:r,meta:v};
+}
+function validMeta(m){
+ if(!m||typeof m!=='object')throw Error('Metadatos inválidos');
+ const out={base:null,pending:null,owner:m.owner||null};
+ if(m.base){if(!Number.isSafeInteger(m.base.revision)||m.base.revision<0)throw Error('Revisión inválida');out.base={revision:m.base.revision,records:canonical(m.base.records)};}
+ if(m.pending){if(typeof m.pending.id!=='string'||!Number.isSafeInteger(m.pending.expected))throw Error('Operación inválida');out.pending={...m.pending,records:canonical(m.pending.records)};}
+ return out;
+}
+function getVault(){if(native){const raw=Native.cloudVaultRead();return {raw:raw||null,store:'native'};}
+ const temporary=sessionStorage.getItem(vaultName);if(temporary)return {raw:temporary,store:'session'};
+ const permanent=localStorage.getItem(vaultName);return {raw:permanent,store:permanent?'local':null};
+}
+function writeVault(raw,mode){
+ if(native){if(!Native.cloudVaultWrite(raw))throw Error('No se pudo guardar la sesión local');return;}
+ (mode==='local'?localStorage:sessionStorage).setItem(vaultName,raw);
+}
+function clearVault(mode){if(native){Native.cloudVaultWrite('');return;}(mode==='local'?localStorage:sessionStorage).removeItem(vaultName);}
+async function derive(secret,salt){
+ if(native)return Native.cloudVaultKey(secret,b64(salt));
+ if(!crypto.subtle)throw Error('Este navegador no permite almacenamiento cifrado');
+ const key=await crypto.subtle.importKey('raw',encoder.encode(secret),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:600000,hash:'SHA-256'},key,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function seal(key,salt,value){
+ const iv=random(12),plain=JSON.stringify(value);
+ const cipher=native?Native.cloudVaultCipher(true,key,b64(iv),plain):b64(new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,encoder.encode(plain))));
+ if(!cipher)throw Error('No se pudo cifrar');
+ return JSON.stringify({v:1,salt:b64(salt),iv:b64(iv),cipher});
+}
+async function unseal(secret,raw){
+ const envelope=JSON.parse(raw);if(envelope.v!==1)throw Error('Copia incompatible');
+ const salt=unb64(envelope.salt),key=await derive(secret,salt);
+ if(!key)throw Error('Clave inválida');
+ const iv=unb64(envelope.iv);
+ const plain=native?Native.cloudVaultCipher(false,key,envelope.iv,envelope.cipher):decoder.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,unb64(envelope.cipher)));
+ if(!plain)throw Error('Clave inválida');
+ const data=JSON.parse(plain);if(!data.owner||typeof data.owner!=='string')throw Error('Copia inválida');
+ return {data,key,salt};
+}
+async function acquireBrowserLock(){
+ if(native||releaseBrowserLock)return true;
+ if(!navigator.locks)return false;
+ return new Promise((resolve,reject)=>{navigator.locks.request('sicorp-account-v3',{ifAvailable:true},lock=>{if(!lock){resolve(false);return;}return new Promise(release=>{releaseBrowserLock=release;resolve(true);});}).catch(reject);});
+}
+function freeBrowserLock(){if(releaseBrowserLock){releaseBrowserLock();releaseBrowserLock=null;}}
+function queueVault(){
+ if(!unlocked||!vaultKey||!vaultStore)return false;
+ const key=vaultKey,salt=vaultSalt,mode=vaultStore;
+ const value={owner,refreshToken,verifiedAt:Date.now(),...(native?{}:{records:canonical(records),meta:clone(meta)})};
+ vaultWrites++;
+ vaultTail=vaultTail.catch(()=>{}).then(async()=>{const raw=await seal(key,salt,value);writeVault(raw,mode);vaultFailed=false;}).catch(err=>{vaultFailed=true;status('No se pudo guardar la copia local. Mantén abierta la aplicación.');throw err;}).finally(()=>{vaultWrites--;});
+ vaultTail.catch(()=>{});return true;
+}
+async function flushVault(){await vaultTail;if(vaultFailed)throw Error('Copia local no confirmada');}
+records={};let last={};
 const element=(tag,t)=>{const n=document.createElement(tag);if(t!==undefined)n.textContent=t;return n;};
 const style=element('style');style.textContent=`
 #sicorp-cloud{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -96,28 +161,46 @@ labelRow.className='cyber-label';label.htmlFor='sicorp-login-key';keyboard.type=
 pass.id='sicorp-login-key';pass.type='password';pass.inputMode='numeric';pass.setAttribute('enterkeyhint','go');pass.autocapitalize='off';pass.spellcheck=false;pass.required=true;pass.autocomplete='off';pass.placeholder='INTRODUCE TU CLAVE';pass.setAttribute('aria-label','Clave maestra');pass.setAttribute('aria-describedby','sicorp-login-message');
 keyboard.onclick=()=>{const numeric=pass.inputMode==='numeric';pass.inputMode=numeric?'text':'numeric';keyboard.textContent=numeric?'123':'ABC';keyboard.setAttribute('aria-label',numeric?'Cambiar a teclado numérico':'Cambiar a teclado completo');pass.focus();};
 msg.id='sicorp-login-message';msg.className='cyber-message';msg.setAttribute('role','status');
-enter.type='submit';enter.className='cyber-enter';local.type='button';local.className='cyber-local';local.hidden=!native;
+enter.type='submit';enter.className='cyber-enter';local.type='button';local.className='cyber-local';local.hidden=true;
 foot.className='cyber-foot';foot.append(element('span','ACCESO SEGURO'),element('span','SYS / 2.0'));foot.setAttribute('aria-hidden','true');
-form.append(top,title,rule,msg,labelRow,pass,enter,local,foot);login.append(form);document.body.append(login);
-login.addEventListener('cancel',e=>{if(!native)e.preventDefault();});local.onclick=()=>login.close();
+const trust=element('input'),trustLabel=element('label',' Guardar copia cifrada en este dispositivo personal'),trustHelp=element('p','En equipos compartidos, no actives esta opción. Los cambios sin conexión se conservan en esta pestaña hasta sincronizar.');
+trust.type='checkbox';trust.id='sicorp-trusted-device';trustLabel.htmlFor=trust.id;trustLabel.prepend(trust);trustLabel.className='cyber-trust';trustHelp.className='cyber-message';trustLabel.hidden=trustHelp.hidden=native;
+try{trust.checked=!native&&getVault().store==='local';}catch{}
+style.textContent+='\n#sicorp-cloud-login .cyber-trust{display:flex;align-items:center;gap:9px;font-size:12px;color:#a8c7d7}#sicorp-cloud-login .cyber-trust input{width:20px;min-height:20px;accent-color:#4ef1d7;padding:0;margin:0;flex:none}';
+form.append(top,title,rule,msg,labelRow,pass,trustLabel,trustHelp,enter,local,foot);login.append(form);document.body.append(login);
+login.addEventListener('cancel',e=>e.preventDefault());local.onclick=()=>{};
 function status(s){badge.textContent=s;}
 function save(){
- try{const v=canonical(records);if(native&&!Native.cloudSave(JSON.stringify(v),JSON.stringify(meta)))throw Error('No se pudo guardar');last=clone(v);return true;}catch(e){return false;}
+ try{
+  if(!unlocked)return false;
+  const v=canonical(records);meta.owner=owner;
+  if(native){if(!Native.cloudSave(JSON.stringify(v),JSON.stringify(meta)))throw Error('No se pudo guardar');}
+  else if(!queueVault())throw Error('No se pudo preparar copia local');
+  last=clone(v);return true;
+ }catch(e){return false;}
 }
 function rollbackLocal(){records=clone(last);render();}
 function dirty(){return !!meta.pending||!meta.base||!equal(records,meta.base.records);}
-function showLogin(){if(!login.open){pass.inputMode='numeric';keyboard.textContent='ABC';keyboard.setAttribute('aria-label','Cambiar a teclado completo');pass.value='';login.showModal();}else pass.value='';}
-function resetIdle(){if(native)return;clearTimeout(timer);if(session)timer=setTimeout(()=>endSession(true),300000);}
-for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,resetIdle,{passive:true});
-function endSession(automatic){
- const pending=dirty()&&(!meta.base||!empty(records)||meta.pending);
- if(!native&&!automatic&&pending&&!confirm('Hay cambios sin confirmar en la nube. ¿Cerrar sesión de todas formas?'))return;
- const old=session;session=null;epoch++;busy=false;clearTimeout(timer);clearTimeout(expiry);
- if(!native){if($('modal').open)$('modal').close();records={};last={};meta={base:null,pending:null};conflict=false;$('restoretext').value='';render();showLogin();}
- evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Conectar nube';logoutButton.hidden=true;status(pending&&!native?'Sesión cerrada; verifica cambios pendientes.':'Sin conexión a la nube');
- if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});
+function showLogin(){
+ if(!login.open){pass.inputMode='numeric';keyboard.textContent='ABC';keyboard.setAttribute('aria-label','Cambiar a teclado completo');pass.value='';login.showModal();}else pass.value='';
 }
-window.addEventListener('beforeunload',e=>{if(!native&&session&&dirty()){e.preventDefault();e.returnValue='';}});
+function resetIdle(){clearTimeout(timer);if(unlocked&&!native&&vaultStore!=='local')timer=setTimeout(()=>endSession(true),300000);}
+for(const ev of ['pointerdown','keydown'])document.addEventListener(ev,resetIdle,{passive:true});
+async function endSession(automatic){
+ if(!unlocked)return;
+ const pending=dirty()&&(!meta.base||!empty(records)||meta.pending),old=session;
+ if(!automatic&&pending&&!confirm('Hay cambios pendientes. Se conservarán en este dispositivo'+(!native&&vaultStore==='session'?' mientras esta pestaña siga abierta':'')+'. ¿Bloquear el acceso?'))return;
+ const e=++epoch;busy=false;clearTimeout(timer);clearTimeout(expiry);
+ try{if(!native&&pending){queueVault();await flushVault();}else if(native&&!save())throw Error('Copia local no confirmada');}
+ catch{status('No se pudo guardar. La sesión sigue abierta para proteger tus ventas.');resetIdle();return;}
+ if(e!==epoch)return;
+ const mode=vaultStore;
+ if(!native&&mode==='session'&&!pending){try{clearVault(mode);}catch{}if(old)request('/auth/v1/logout?scope=local','POST',null,old.access_token).catch(()=>{});}
+ unlocked=false;session=null;refreshToken=null;sessionUntil=0;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;vaultFailed=false;records={};last={};meta={base:null,pending:null,owner:null};conflict=false;
+ if($('modal')?.open)$('modal').close();$('restoretext').value='';render();
+ evidence.hidden=true;fileList.replaceChildren();file.value='';syncButton.textContent='Iniciar sesión';logoutButton.hidden=true;status('Acceso privado');freeBrowserLock();showLogin();msg.textContent='Introduce tu clave para acceder a tu cuenta.';
+}
+window.addEventListener('beforeunload',e=>{if(!native&&(vaultWrites||vaultFailed||(unlocked&&vaultStore==='session'&&dirty()))){e.preventDefault();e.returnValue='';}});
 window.sicorpCloudReceive=(id,code,body)=>{const f=callbacks.get(id);if(f){callbacks.delete(id);f(Number(code),body);}};
 async function request(path,method='GET',body=null,token=session?.access_token){
  let code,raw;
@@ -129,6 +212,18 @@ async function request(path,method='GET',body=null,token=session?.access_token){
  }
  if(code<200||code>=300){const e=Error('Conexión rechazada ('+code+')');e.code=code;throw e;}
  return raw?JSON.parse(raw):null;
+}
+function acceptSession(s,expected){
+ if(!s?.access_token||!s.refresh_token||s.user?.app_metadata?.sicorp_admin!==true||!s.user.id||(expected&&s.user.id!==expected))throw Error('Cuenta no autorizada');
+ session=s;owner=s.user.id;refreshToken=s.refresh_token;sessionUntil=Date.now()+Math.max(1,Number(s.expires_in)||3600)*1000;
+}
+async function ensureSession(e){
+ if(session&&Date.now()<sessionUntil-60000)return true;
+ if(!refreshToken)throw Error('Conecta e inicia sesión para renovar el acceso');
+ const s=await request('/auth/v1/token?grant_type=refresh_token','POST',{refresh_token:refreshToken},'');
+ if(e!==epoch||!unlocked)return false;
+ acceptSession(s,owner);if(!queueVault())throw Error('No se pudo guardar la sesión renovada');await flushVault();
+ evidence.hidden=false;return true;
 }
 async function pull(){const rows=await request('/rest/v1/sicorp_history?select=revision,records');if(!Array.isArray(rows)||rows.length>1)throw Error('Respuesta de historial inválida');return rows.length?{revision:Number(rows[0].revision),records:canonical(rows[0].records)}:{revision:0,records:{}};}
 function adopt(remote){
@@ -147,9 +242,12 @@ function adopt(remote){
  if(!save()){meta=prevMeta;records=prev;throw Error('No se pudo guardar el historial');}render();return true;
 }
 async function sync(){
- if(!session||busy)return;
+ if(!unlocked||busy||conflict)return;
+ if(!native&&navigator.onLine===false){status('Sin conexión · ventas guardadas localmente');return;}
  busy=true;const e=epoch;status('Sincronizando…');
  try{
+  if(!await ensureSession(e)||e!==epoch)return;
+  await flushVault();if(e!==epoch||!unlocked)return;
   // Resolve ambiguous previous requests before pulling a new base.
   if(!meta.pending){
    const remote=await pull();if(e!==epoch||!session)return;
@@ -160,19 +258,21 @@ async function sync(){
    meta.pending={id:uuid(),expected:meta.base.revision,records:canonical(records)};
    if(!save()){meta.pending=null;throw Error('No se pudo conservar la operación');}
   }
+  await flushVault();if(e!==epoch||!unlocked)return;
   const p=clone(meta.pending);
   const response=await request('/rest/v1/rpc/sicorp_sync_commit','POST',{p_expected:p.expected,p_records:p.records,p_request:p.id});
   if(e!==epoch||!session)return;
   if(response.applied===true){
    meta.base={revision:Number(response.revision),records:p.records};meta.pending=null;
    if(!save()){meta.pending=p;throw Error('Confirmación local pendiente');}
+   await flushVault();if(e!==epoch)return;
    status(equal(records,p.records)?'☁ Sincronizado':'Cambios pendientes');
   }else if(response.applied===false){
    meta.pending=null;
    if(!adopt({revision:Number(response.revision),records:canonical(response.records)})){save();return;}
    status('Cambios combinados; sincronización pendiente');
   }else throw Error('Respuesta inesperada');
- }catch(err){if(e===epoch){if(err.code===401){endSession(true);showLogin();msg.textContent='Sesión vencida. Ingresa tu clave.';}else status('Sin confirmar · '+(err.message||'Reintentar'));}}
+ }catch(err){if(e===epoch){if(err.code===401||err.code===400||err.code===403){session=null;sessionUntil=0;evidence.hidden=true;status('Acceso a nube pendiente · datos locales conservados');if(err.code!==401){refreshToken=null;syncButton.textContent='Renovar acceso';}}else status('Sin conexión o sincronización pendiente · datos locales conservados');}}
  finally{if(e===epoch)busy=false;}
 }
 
@@ -209,23 +309,45 @@ upload.onclick=async()=>{
 refreshFiles.onclick=listFiles;
 window.sicorpEvidenceResult=(ok,message)=>{if(session){evidenceStatus(message);if(ok)listFiles();}};
 
-const originalPersist=persist;
 persist=function(){
- if(!native&&!session){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
+ if(!unlocked){rollbackLocal();notify('Inicia sesión para guardar.');return false;}
  if(!save()){rollbackLocal();notify('No se pudo guardar el historial.');return false;}
- if(session){status('Cambios pendientes');setTimeout(sync,0);}else status('Guardado en este dispositivo');
+ if(native){status('Guardado localmente · sincronización pendiente');setTimeout(sync,0);}
+ else {status('Guardando copia local cifrada…');flushVault().then(()=>{if(unlocked){status('Copia local guardada · sincronización pendiente');sync();}}).catch(()=>notify('No se confirmó el guardado local. No cierres esta pestaña.'));}
  return true;
 };
 form.onsubmit=async ev=>{
  ev.preventDefault();if(enter.disabled)return;enter.disabled=true;msg.textContent='Verificando acceso…';const secret=pass.value;pass.value='';
+ let existing,opened=null,online=null,mode;
  try{
-  const s=await request('/auth/v1/token?grant_type=password','POST',{email:cfg.ownerEmail,password:secret},'');
-  if(!s?.access_token||s.user?.app_metadata?.sicorp_admin!==true)throw Error('Cuenta no autorizada');
-  session=s;epoch++;resetIdle();clearTimeout(expiry);expiry=setTimeout(()=>{endSession(true);if(!native)showLogin();},Math.max(1000,(s.expires_in||3600)*1000-10000));
-  login.close();syncButton.textContent='Sincronizar';logoutButton.hidden=false;evidence.hidden=false;await sync();listFiles();
- }catch(e){msg.textContent='No se pudo acceder. Comprueba tu clave y conexión.';}finally{enter.disabled=false;}
+  existing=getVault();mode=native?'native':(trust.checked?'local':'session');
+  if(!native&&(existing.store==='local'||mode==='local')){if(!await acquireBrowserLock())throw Error('Cierra la otra pestaña SICORP para proteger tu copia local.');existing=getVault();}
+  if(existing.raw){try{opened=await unseal(secret,existing.raw);}catch{throw Error('Clave incorrecta para la copia local. No se ha sobrescrito ningún dato.');}}
+  try{if(!native&&navigator.onLine===false)throw Error('Sin conexión');online=await request('/auth/v1/token?grant_type=password','POST',{email:cfg.ownerEmail,password:secret},'');}
+  catch(e){if(!opened||e.code&&e.code<500)throw e;online=null;}
+  if(!online&&!opened)throw Error('El primer inicio de sesión requiere internet.');
+  if(online)acceptSession(online,opened?.data.owner);
+  else{owner=opened.data.owner;refreshToken=opened.data.refreshToken;session=null;sessionUntil=0;}
+  if(native){const previous=readNative();if(previous.meta.owner&&previous.meta.owner!==owner)throw Error('El historial local pertenece a otra cuenta.');records=previous.records;meta=previous.meta;}
+  else if(opened){records=canonical(opened.data.records||{});meta=validMeta(opened.data.meta||{});if(meta.owner&&meta.owner!==owner)throw Error('La copia pertenece a otra cuenta.');}
+  else{records={};meta={base:null,pending:null,owner:null};}
+  if(opened){vaultKey=opened.key;vaultSalt=opened.salt;}
+  else{vaultSalt=random(16);vaultKey=await derive(secret,vaultSalt);}
+  if(!vaultKey)throw Error('No se pudo proteger la sesión local.');
+  vaultStore=mode;unlocked=true;conflict=false;epoch++;meta.owner=owner;
+  if(!save()||!queueVault())throw Error('No se pudo guardar la copia de la cuenta.');
+  await flushVault();
+  if(!native&&existing.store&&existing.store!==mode)clearVault(existing.store);
+  login.close();resetIdle();render();syncButton.textContent='Sincronizar';logoutButton.textContent='Bloquear sesión';logoutButton.hidden=false;evidence.hidden=!session;
+  status(session?'Cuenta conectada · sincronizando…':'Sin conexión · datos locales protegidos');
+  sync();if(session)listFiles();
+ }catch(e){
+  unlocked=false;session=null;sessionUntil=0;refreshToken=null;owner=null;vaultKey=null;vaultSalt=null;vaultStore=null;records={};last={};meta={base:null,pending:null,owner:null};freeBrowserLock();render();
+  msg.textContent=e?.message?.startsWith('Clave incorrecta')||e?.message?.startsWith('Cierra')||e?.message?.includes('copia')||e?.message?.includes('cuenta')?e.message:'No se pudo acceder. Verifica tu clave e internet. El primer acceso requiere conexión.';
+ }finally{enter.disabled=false;}
 };
-syncButton.onclick=()=>session?sync():showLogin();logoutButton.onclick=()=>endSession(false);
-setInterval(()=>{if(session&&!conflict)sync();},12000);window.addEventListener('online',sync);document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)sync();});
-status(native?'Historial local · conecta la nube':'Acceso privado');render();if(!native)showLogin();else if(!meta.base)showLogin();
+syncButton.onclick=async()=>{if(!unlocked){showLogin();return;}if(!refreshToken&&!session){await endSession(false);return;}conflict=false;sync();};
+logoutButton.onclick=()=>endSession(false);
+setInterval(()=>{if(unlocked&&!conflict)sync();},12000);window.addEventListener('online',()=>{if(unlocked)sync();});window.addEventListener('offline',()=>{if(unlocked)status('Sin conexión · guardado local activo');});document.addEventListener('visibilitychange',()=>{if(!document.hidden&&unlocked)sync();});
+status('Acceso privado');render();showLogin();
 })();

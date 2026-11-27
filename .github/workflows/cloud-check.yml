@@ -1,7 +1,7 @@
 name: Verificar SICORP Cloud
 on:
   push:
-    branches: [sicorp-web-cloud]
+    branches: [sicorp-web-cloud, sicorp-offline-test]
     paths:
       - 'app/**'
       - 'web/**'
@@ -23,6 +23,7 @@ jobs:
           node --check app/src/main/assets/simple-ui.js
           node --check app/src/main/assets/theme.js
           node --check web/boot.js
+          node --check sw.js
           node - <<'JS'
           const fs=require('fs'), assert=require('assert');
           const c=fs.readFileSync('app/src/main/assets/cloud.js','utf8');
@@ -71,6 +72,7 @@ jobs:
                 assert.equal(await key.inputValue(),'012345');
                 await key.fill('');
                 assert.equal(await frame.getByText('Continuar sin conexión',{exact:true}).isVisible(),false);
+                assert.equal(await frame.locator('#sicorp-trusted-device').isChecked(),false);
                 await page.keyboard.press('Escape');
                 assert.equal(await frame.locator('#sicorp-cloud-login[open]').count(),1);
                 assert.deepEqual(errors,[]);
