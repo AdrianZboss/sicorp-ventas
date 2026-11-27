@@ -23,6 +23,7 @@ import javax.crypto.spec.GCMParameterSpec;
 final class UpdateManager {
     private static final String CLIENT="Iv23li72XwoC9bqglj7e";
     private static final String API="https://api.github.com/repos/AdrianZboss/sicorp-ventas";
+    private static final String BROWSER_APK="https://github.com/AdrianZboss/sicorp-ventas/releases/latest/download/Sicorp_Ventas.apk";
     private static final String OAUTH="https://github.com/login/oauth/access_token";
     private static final String CERT="f078c96b8c4cac3dbca6e589c9dba3beb04871959b957ded06830e69430e655c";
     private static final String ALIAS="sicorp-updater-token-v1";
@@ -69,7 +70,7 @@ final class UpdateManager {
         new AlertDialog.Builder(a,dialogTheme()).setTitle("Actualizaciones")
             .setMessage("Busca una nueva versión. Solo tendrás que autorizar GitHub la primera vez o cuando caduque tu sesión.")
             .setPositiveButton("Buscar", (d,w)->start(this::check))
-            .setNeutralButton("Cerrar sesión",(d,w)->{prefs.edit().remove("token").commit();cleanup();message("Sesión cerrada","Podrás autorizar GitHub nuevamente al buscar actualizaciones.");})
+            .setNeutralButton("Descargar en navegador",(d,w)->openBrowserDownload())
             .setNegativeButton("Cancelar",null).show();
     }
     private javax.crypto.SecretKey secretKey() throws Exception {
@@ -109,30 +110,28 @@ final class UpdateManager {
         }
         return false;
     }
-    private void connectionError(Exception e,boolean checking){
-        String body=!hasNetwork()?"No hay una conexión a Internet activa. Activa Wi-Fi o datos móviles.": "No se pudo conectar con GitHub. Prueba con datos móviles u otra red Wi-Fi. Si usas DNS privado o VPN, revisa su configuración y vuelve a buscar.";
-        ui(()->{
-            AlertDialog.Builder d=new AlertDialog.Builder(a,dialogTheme()).setTitle("Conexión no disponible").setMessage(body)
-              .setNeutralButton("Ajustes de red",(dialog,w)->{try{a.startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));}catch(Exception ignored){}})
-              .setNegativeButton("Cerrar",null);
-            if(checking)d.setPositiveButton("Reintentar",(dialog,w)->start(this::check));
-            else d.setPositiveButton("Buscar de nuevo",(dialog,w)->start(this::check));
-            d.show();
-        });
-    }
-    private void resolveHost(URL url)throws Exception {
-        UnknownHostException last=null;
-        for(int attempt=0;attempt<3;attempt++){
-            if(cancelled||closed)throw new IOException("Operación cancelada.");
-            try{InetAddress.getAllByName(url.getHost());return;}
-            catch(UnknownHostException e){last=e;if(attempt<2)Thread.sleep(1200L*(attempt+1));}
+    private void openBrowserDownload(){
+        Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(BROWSER_APK));
+        intent.addCategory(Intent.CATEGORY_BROWSABLE);
+        try{
+            Intent chrome=new Intent(intent).setPackage("com.android.chrome");
+            a.startActivity(chrome);
+        }catch(ActivityNotFoundException e){
+            try{a.startActivity(intent);}
+            catch(Exception error){message("Descargar actualización","Abre GitHub en tu navegador y descarga Sicorp_Ventas.apk desde Releases.");}
         }
-        throw last;
+    }
+    private void connectionError(Exception e,boolean checking){
+        android.util.Log.w("SicorpUpdater","Native HTTPS failed: "+e.getClass().getSimpleName()+"; networkReported="+hasNetwork());
+        ui(()->new AlertDialog.Builder(a,dialogTheme()).setTitle("Actualizar Sicorp Ventas")
+          .setMessage("No se pudo conectar desde la aplicación. Puedes descargar la última APK firmada con tu sesión de GitHub en el navegador e instalarla encima de esta versión, sin borrar tus ventas.")
+          .setPositiveButton("Descargar en navegador",(dialog,w)->openBrowserDownload())
+          .setNeutralButton("Reintentar",(dialog,w)->start(this::check))
+          .setNegativeButton("Cerrar",null).show());
     }
     private HttpURLConnection connection(String address,String token,String accept)throws Exception {
         URL url=new URL(address);
         if(!"https".equals(url.getProtocol()))throw new IOException("Conexión no segura.");
-        resolveHost(url);
         HttpURLConnection c=(HttpURLConnection)url.openConnection();
         c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setInstanceFollowRedirects(false);
         c.setRequestProperty("Accept",accept);c.setRequestProperty("User-Agent","SicorpVentasUpdater");
@@ -235,7 +234,6 @@ final class UpdateManager {
         try{
             if(apk().isFile()&&prefs.getInt("download_code",0)>installedCode()){validate(apk(),null);ui(this::offerInstall);return;}
             cleanup();showProgress("Actualizaciones","Consultando GitHub…",false);
-            if(!hasNetwork())throw new UnknownHostException("No hay red activa.");
             JSONObject t=token(false);if(t==null)return;
             JSONObject release=latest(t.getString("access_token"));
             if(release==null){t=token(true);if(t==null)return;release=latest(t.getString("access_token"));}
