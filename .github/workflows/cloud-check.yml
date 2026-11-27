@@ -56,6 +56,9 @@ jobs:
                 assert.equal(await frame.locator('#grid').count(),1);
                 assert.equal(await frame.locator('#sicorp-cloud-login input[type=password]').count(),1);
                 const key=frame.locator('#sicorp-login-key');
+                const urls=await frame.locator('script[src]').evaluateAll(nodes=>nodes.map(n=>n.src));
+                assert.ok(urls.some(u=>u.includes('/cloud.js?v=')));
+                assert.ok((await page.locator('#app').getAttribute('src')).includes('index.html?v='));
                 assert.equal(await key.getAttribute('inputmode'),'numeric');
                 assert.equal(await key.getAttribute('enterkeyhint'),'go');
                 await key.fill('012345');
