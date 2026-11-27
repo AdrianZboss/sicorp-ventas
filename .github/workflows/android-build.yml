@@ -1,0 +1,42 @@
+name: Compilar Android (Release sin firmar)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Configurar Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Instalar Android SDK
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
+
+      - name: Compilar Release
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Guardar APK sin firmar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sicorp-Ventas-release-sin-firmar
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
