@@ -130,7 +130,7 @@
  const grid=document.getElementById('grid'), search=document.getElementById('search');
  if(!grid||!search||typeof renderCatalog!=='function')return;
  function rankHistory(history, products, selectedBrand, selectedCategory){
- const eligible=new Map(products.filter(p=>(selectedBrand==='TODAS'||p.brand===selectedBrand)&&(selectedCategory==='Todas'||p.cat===selectedCategory)).map(p=>[String(p.id),p]));
+ const eligible=new Map(products.filter(p=>String(p.id)!=='35'&&(selectedBrand==='TODAS'||p.brand===selectedBrand)&&(selectedCategory==='Todas'||p.cat===selectedCategory)).map(p=>[String(p.id),p]));
  const sums=new Map();
  for(const [date, rows] of Object.entries(history||{})){
   if(!Array.isArray(rows))continue;
@@ -261,11 +261,25 @@
   });
   grid.querySelectorAll('[data-product]').forEach(node=>colorize(node,catalog.find(p=>p.id===node.dataset.product)));
  }
+ // Reference 35 (Deconova Set Básico con Sesgo x2) is not eligible for this sales register.
+ // Keep its immutable catalog ID for validation and display of historical entries.
+ function removeExcludedCards(){
+  grid.querySelectorAll('[data-product]').forEach(node=>{if(node.dataset.product==='35')node.remove();});
+  grid.querySelectorAll('[data-family]').forEach(node=>{
+   const group=familyGroups[Number(node.dataset.family)];
+   if(group&&Array.isArray(group[3])&&group[3].length&&group[3].every(id=>String(id)==='35')){
+    const section=node.closest('.family-section');(section||node).remove();
+   }
+  });
+ }
  const originalCatalog=renderCatalog;
- renderCatalog=function(){originalCatalog();decorateCatalog();renderFrequent();};
+ renderCatalog=function(){originalCatalog();removeExcludedCards();decorateCatalog();renderFrequent();};
+ // The original family expander may render independently of renderCatalog.
+ const excludedObserver=new MutationObserver(removeExcludedCards);
+ excludedObserver.observe(grid,{childList:true,subtree:true});
  search.oninput=renderCatalog;
  const originalOpen=open;
- open=function(p){originalOpen(p);colorize(document.getElementById('modal'),p);};
+ open=function(p){if(String(p?.id)==='35')return;originalOpen(p);colorize(document.getElementById('modal'),p);};
  renderCatalog();
 })();
 
@@ -334,7 +348,7 @@
   });refresh();
  }
  const oldOpen=open;
- open=function(p){pending=p.variants.map(()=>0);controls=[];openedDay=day;saving=false;preview.open=false;oldOpen(p);build();modal.scrollTop=0;};
+ open=function(p){if(String(p?.id)==='35')return;pending=p.variants.map(()=>0);controls=[];openedDay=day;saving=false;preview.open=false;oldOpen(p);build();modal.scrollTop=0;};
  add.onclick=()=>{
   if(saving||!sum()||!product||day!==openedDay)return;
   saving=true;refresh();
@@ -353,7 +367,7 @@
  window.sicorpRestoreDraft=d=>{
   if(!d||!/^\d{4}-\d{2}-\d{2}$/.test(d.day)||!Array.isArray(d.quantities))return;
   const p=catalog.find(x=>String(x.id)===d.id);
-  if(!p||p.variants.length!==d.quantities.length||!d.quantities.every(n=>Number.isInteger(n)&&n>=0&&n<=999)||!d.quantities.some(n=>n>0))return;
+  if(!p||String(p.id)==='35'||p.variants.length!==d.quantities.length||!d.quantities.every(n=>Number.isInteger(n)&&n>=0&&n<=999)||!d.quantities.some(n=>n>0))return;
   day=d.day;render();open(p);pending=d.quantities.slice();refresh();notify('Selección pendiente recuperada. Confirma para registrar.');
  };
  modal.addEventListener('close',()=>{pending=[];controls=[];saving=false;});

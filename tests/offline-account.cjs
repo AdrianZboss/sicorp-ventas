@@ -32,6 +32,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict');
   await f.getByText('☁ Sincronizado',{exact:true}).waitFor();
   const inner=page.frames().find(x=>x.url().includes('/app/src/main/assets/index.html'));
   assert.ok(inner);
+  // Removed reference remains resolvable for old records but cannot be registered.
+  await inner.evaluate(()=>{const p=catalog.find(x=>String(x.id)==='35');if(!p)throw Error('Historical product missing');open(p);});
+  assert.equal(await f.locator('#modal').isVisible(),false);
+  await f.locator('#search').fill('17043095');
+  assert.equal(await f.locator('#grid [data-product="35"]').count(),0);
+  await f.locator('#search').fill('');
   const formats=await inner.evaluate(()=>{
    const oldDay=day;day='2026-11-26';
    const rows=[{id:'34',v:0,q:4},{id:'30',v:0,q:2}];
